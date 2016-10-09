@@ -60,7 +60,10 @@
 	hw/xfree86/xf8_16bpp \
 	hw/xfree86/xf8_32bpp \
 	hw/xfree86/xf86config \
-	hw/xfree86/xf86modes
+	hw/xfree86/xf86modes \
+	hw/kdrive/src/kdrive \
+	hw/kdrive/src/kdrivestub \
+	hw/netbsd/kdrive/wscons
 
 .if !defined(LIBDIR.${_SL})
 LIBDIR.${_SL}!=	cd ${NETBSDSRCDIR}/external/mit/xorg/server/xorg-server/${_SL} && ${PRINTOBJDIR}
