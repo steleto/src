@@ -200,8 +200,8 @@ char *boot_file = NULL;
 char *boot_args = NULL;
 
 paddr_t physical_start;
-paddr_t physical_freestart;
-paddr_t physical_freeend;
+paddr_t physical_freestart, physical_freestart0;
+paddr_t physical_freeend, physical_freeend0;
 paddr_t physical_end;
 u_int free_pages;
 
@@ -1014,6 +1014,9 @@ initarm(void *arg)
 	{
 		extern char _end[];
 
+		physical_freestart0 = physical_freestart;
+		physical_freeend0   = physical_freeend;
+
 		physical_freestart = physical_start +
 		    ((((uintptr_t) _end + PGOFSET) & ~PGOFSET) - KERNEL_BASE);
 		physical_freeend = physical_end;
@@ -1091,6 +1094,9 @@ initarm(void *arg)
 	printf("page ");
 #endif
 	uvm_setpagesize();        /* initialize PAGE_SIZE-dependent variables */
+	uvm_page_physload(atop(physical_freestart0), atop(physical_freeend0),
+	    atop(physical_freestart0), atop(physical_freeend0),
+	    VM_FREELIST_DEFAULT);
 	uvm_page_physload(atop(physical_freestart), atop(physical_freeend),
 	    atop(physical_freestart), atop(physical_freeend),
 	    VM_FREELIST_DEFAULT);
