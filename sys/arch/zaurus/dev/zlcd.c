@@ -208,6 +208,8 @@ static int
 lcd_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 {
 	struct pxa2x0_lcd_softc *sc = (struct pxa2x0_lcd_softc *)v;
+	struct wsdisplayio_fbinfo *fbinfo;
+	struct rasops_info *rinfo;
 	struct hpcfb_fbconf *fbconf;
 	struct hpcfb_dspconf *dspconf;
 	int res = EINVAL;
@@ -219,6 +221,13 @@ lcd_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 		res = lcdctl_param(cmd, (struct wsdisplay_param *)data);
 		break;
 #endif
+
+	case WSDISPLAYIO_GET_FBINFO:
+		fbinfo = (struct wsdisplayio_fbinfo *)data;
+		rinfo = &sc->active->rinfo;
+		res = wsdisplayio_get_fbinfo(rinfo, fbinfo);
+		fbinfo->fbi_flags |= WSFB_VRAM_IS_RAM;
+		break;
 
 	case HPCFBIO_GCONF:
 		fbconf = (struct hpcfb_fbconf *)data;
