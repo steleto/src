@@ -66,17 +66,17 @@ static const keysym_t zkbd_keydesc_us[] = {
     KC(50),	KS_j,		KS_J,		KS_asterisk,
     KC(51),	KS_m,
     KC(52),	KS_period,	KS_question,	KS_greater,
-    KC(54),	KS_KP_Left,	KS_KP_Left,	KS_Home,	/* left, */
+    KC(54),	KS_Left,	KS_Left,	KS_Home,	/* left, */
     KC(56),	KS_0,		KS_asciitilde,
     KC(57),	KS_o,
     KC(58),	KS_k,
     KC(59),	KS_l,		KS_L,		KS_bar,
-    KC(61),	KS_KP_Up,	KS_KP_Up,	KS_Prior,	/* up, */
-    KC(62),	KS_KP_Down,	KS_KP_Down,	KS_Next,	/* down, */
-    KC(64),	KS_Delete,	KS_BackSpace,
+    KC(61),	KS_Up,		KS_Up,		KS_Prior,	/* up, */
+    KC(62),	KS_Down,	KS_Down,	KS_Next,	/* down, */
+    KC(64),	KS_BackSpace,	KS_BackSpace,	KS_Delete,
     KC(65),	KS_p,
     KC(68),	KS_Return,
-    KC(70),	KS_KP_Right,	KS_KP_Right,	KS_End,		/* right, */
+    KC(70),	KS_Right,	KS_Right,	KS_End,		/* right, */
     KC(80),	KS_KP_Right,					/* OK, (ext) */
     KC(81),	KS_KP_Down,					/* tog left, */
     KC(83),	KS_Shift_R,
@@ -137,17 +137,17 @@ static const keysym_t zkbd_keydesc_us_c860[] = {
     KC(50),	KS_j,		KS_J,		KS_asterisk,
     KC(51),	KS_m,
     KC(52),	KS_period,	KS_question,	KS_greater,
-    KC(54),	KS_KP_Left,	KS_KP_Left,	KS_Home,	/* left, */
+    KC(54),	KS_Left,	KS_Left,	KS_Home,	/* left, */
     KC(56),	KS_0,		KS_asciitilde,
     KC(57),	KS_o,
     KC(58),	KS_k,
     KC(59),	KS_l,		KS_L,		KS_bar,
-    KC(61),	KS_KP_Up,	KS_KP_Up,	KS_Prior,	/* up, */
-    KC(62),	KS_KP_Down,	KS_KP_Down,	KS_Next,	/* down, */
-    KC(64),	KS_Delete,	KS_BackSpace,
+    KC(61),	KS_Up,		KS_Up,		KS_Prior,	/* up, */
+    KC(62),	KS_Down,	KS_Down,	KS_Next,	/* down, */
+    KC(64),	KS_BackSpace,	KS_BackSpace,	KS_Delete,
     KC(65),	KS_p,
     KC(68),	KS_Return,
-    KC(70),	KS_KP_Right,	KS_KP_Right,	KS_End,		/* right, */
+    KC(70),	KS_Right,	KS_Right,	KS_End,		/* right, */
     KC(75),	KS_Shift_R,
     KC(84),	KS_Shift_L,
     KC(93),	KS_Mode_switch					/* Fn */
@@ -209,23 +209,23 @@ static const char xt_keymap[] = {
     /* KC(51), */	0x32, /* KS_m, */
     /* KC(52), */	0x34, /* KS_period, KS_question, KS_greater, */
     /* KC(53), */	0x00, /* NC */
-    /* KC(54), */	0xcb, /* KS_KP_Left, left, */
+    /* KC(54), */	0xcb, /* KS_Left, left, */
     /* KC(55), */	0x00, /* NC */
     /* KC(56), */	0x0b, /* KS_0,	KS_asciitilde, */
     /* KC(57), */	0x18, /* KS_o, */
     /* KC(58), */	0x25, /* KS_k, */
     /* KC(59), */	0x26, /* KS_l,	KS_L,	KS_bar, */
     /* KC(60), */	0x00, /* NC */
-    /* KC(61), */	0xc8, /* KS_KP_Up, up, */
-    /* KC(62), */	0xd0, /* KS_KP_Down, down, */
+    /* KC(61), */	0xc8, /* KS_Up, up, */
+    /* KC(62), */	0xd0, /* KS_Down, down, */
     /* KC(63), */	0x00, /* NC */
-    /* KC(64), */	0x0e, /* KS_Delete,	KS_BackSpace, */
+    /* KC(64), */	0x0e, /* KS_BackSpace, KS_BackSpace, KS_Delete, */
     /* KC(65), */	0x19, /* KS_p, */
     /* KC(66), */	0x00, /* NC */
     /* KC(67), */	0x00, /* NC */
     /* KC(68), */	0x1c, /* KS_Return, */
     /* KC(69), */	0x00, /* NC */
-    /* KC(70), */	0xcd, /* KS_KP_Right, right, */
+    /* KC(70), */	0xcd, /* KS_Right, right, */
     /* KC(71), */	0x00, /* NC */
     /* KC(72), */	0x00, /* NC */
     /* KC(73), */	0x00, /* NC */
@@ -306,23 +306,23 @@ static const char xt_keymap_c860[] = {
     /* KC(51), */	0x32, /* KS_m, */
     /* KC(52), */	0x34, /* KS_period, KS_question, KS_greater, */
     /* KC(53), */	0x00, /* NC */
-    /* KC(54), */	0xcb, /* KS_KP_Left, left, */
+    /* KC(54), */	0xcb, /* KS_Left, left, */
     /* KC(55), */	0x00, /* NC */
     /* KC(56), */	0x0b, /* KS_0,	KS_asciitilde, */
     /* KC(57), */	0x18, /* KS_o, */
     /* KC(58), */	0x25, /* KS_k, */
     /* KC(59), */	0x26, /* KS_l,	KS_L,	KS_bar, */
     /* KC(60), */	0x00, /* NC */
-    /* KC(61), */	0xc8, /* KS_KP_Up, up, */
-    /* KC(62), */	0xd0, /* KS_KP_Down, down, */
+    /* KC(61), */	0xc8, /* KS_Up, up, */
+    /* KC(62), */	0xd0, /* KS_Down, down, */
     /* KC(63), */	0x00, /* NC */
-    /* KC(64), */	0x0e, /* KS_Delete,	KS_BackSpace, */
+    /* KC(64), */	0x0e, /* KS_BackSpace, KS_BackSpace, KS_Delete, */
     /* KC(65), */	0x19, /* KS_p, */
     /* KC(66), */	0x00, /* NC */
     /* KC(67), */	0x00, /* NC */
     /* KC(68), */	0x1c, /* KS_Return, */
     /* KC(69), */	0x00, /* NC */
-    /* KC(70), */	0xcd, /* KS_KP_Right, right, */
+    /* KC(70), */	0xcd, /* KS_Right, right, */
     /* KC(71), */	0x00, /* NC */
     /* KC(72), */	0x00, /* NC */
     /* KC(73), */	0x00, /* NC */
