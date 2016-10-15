@@ -61,4 +61,13 @@ SUBDIR+=vfb
 .endif
 .endif
 
+.if ${KDRIVE_LIB} != "no"
+SUBDIR+=kdrive/src
+.endif
+
+.if ${KDRIVE_WSFB} != "no"
+SUBDIR+=netbsd/kdrive/wscons
+SUBDIR+=netbsd/kdrive/wsfb
+.endif
+
 .include <bsd.subdir.mk>
