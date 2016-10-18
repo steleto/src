@@ -23,7 +23,7 @@ CPPFLAGS+=	-I${X11SRCDIR.xorg-server}/include \
 		-I${X11SRCDIR.xorg-server}/Xi \
 		-I${DESTDIR}${X11INCDIR}/X11 \
 
-CPPFLAGS+=	-DHAVE_CONFIG_H -DHAVE_KDRIVE_CONFIG_H
+CPPFLAGS+=	-DHAVE_CONFIG_H -DHAVE_DIX_CONFIG_H -DHAVE_KDRIVE_CONFIG_H
 
 .include "../../../../Makefile.Xserver"
 
