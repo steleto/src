@@ -71,7 +71,7 @@ static struct w100_wsscreen_descr w100lcd_std_screen = {
 		.capabilities = WSSCREEN_WSCOLORS,
 	},
 	.depth = 16,			/* bits per pixel */
-	.flags = 0,
+	.flags = RI_CLEAR,
 };
 
 static const struct wsscreen_descr *w100lcd_scr_descr[] = {

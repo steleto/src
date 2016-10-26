@@ -13,6 +13,9 @@ struct w100_screen {
 	void 	*buf_va;
 	int     depth;
 
+	/* shadow framebuffer */
+	void	*shadow;
+
 	/* rasterop */
 	struct rasops_info rinfo;
 };

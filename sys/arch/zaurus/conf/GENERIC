@@ -228,6 +228,7 @@ lcd0 at pxaip?				# PXA2x0 integrated LCD Controller
 options 	PXA2X0_LCD_WRITETHROUGH
 wsdisplay* at lcd? console ?
 w100lcd0 at pxaip?			# ATI Imageon100 LCDcontroller
+#options		W100_SHADOW
 wsdisplay* at w100lcd? console ?
 lcdctl0 at zssp0
 
