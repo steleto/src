@@ -35,6 +35,7 @@ __KERNEL_RCSID(0, "$NetBSD: w100.c,v 1.1 2012/01/29 10:12:42 tsutsui Exp $");
 #include <sys/conf.h>
 #include <sys/uio.h>
 #include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/kernel.h>			/* for cold */
 
 #include <uvm/uvm_extern.h>
@@ -54,6 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: w100.c,v 1.1 2012/01/29 10:12:42 tsutsui Exp $");
 #include <zaurus/dev/w100var.h>
 
 #include "wsdisplay.h"
+#include "opt_w100.h"
 
 /* Console */
 struct {
@@ -198,7 +200,12 @@ w100_attach_subr(struct w100_softc *sc, bus_space_tag_t iot,
 
 		ri = &scr->rinfo;
 		ri->ri_hw = (void *)scr;
-		ri->ri_bits = scr->buf_va;
+		if (scr->shadow != NULL) {
+			ri->ri_hwbits = scr->buf_va;
+			ri->ri_bits = scr->shadow;
+		} else {
+			ri->ri_bits = scr->buf_va;
+		}
 		w100_setup_rasops(sc, ri, descr, geom);
 
 		/* assumes 16 bpp */
@@ -234,6 +241,9 @@ w100_new_screen(struct w100_softc *sc, int depth, struct w100_screen **scrpp)
 {
 	struct w100_screen *scr = NULL;
 	int error = 0;
+#ifdef W100_SHADOW
+	size_t fbsize;
+#endif
 
 	scr = malloc(sizeof(*scr), M_DEVBUF, M_NOWAIT);
 	if (scr == NULL)
@@ -243,6 +253,10 @@ w100_new_screen(struct w100_softc *sc, int depth, struct w100_screen **scrpp)
 
 	scr->buf_va = (u_char *)bus_space_vaddr(sc->iot, sc->ioh_vram);
 	scr->depth = depth;
+#ifdef W100_SHADOW
+	fbsize = (sc->display_width * depth / 8) * sc->display_height;
+	scr->shadow = kmem_alloc(fbsize, KM_SLEEP);
+#endif
 
 	LIST_INSERT_HEAD(&sc->screens, scr, link);
 	sc->n_screens++;
@@ -412,7 +426,12 @@ w100_alloc_screen(void *v, const struct wsscreen_descr *_type,
 	 */
 	scr->rinfo.ri_flg = 0;
 	scr->rinfo.ri_depth = type->depth;
-	scr->rinfo.ri_bits = scr->buf_va;
+	if (scr->shadow != NULL) {
+		scr->rinfo.ri_hwbits = scr->buf_va;
+		scr->rinfo.ri_bits = scr->shadow;
+	} else {
+		scr->rinfo.ri_bits = scr->buf_va;
+	}
 	scr->rinfo.ri_width = sc->display_width;
 	scr->rinfo.ri_height = sc->display_height;
 	scr->rinfo.ri_stride = scr->rinfo.ri_width * scr->rinfo.ri_depth / 8;

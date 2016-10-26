@@ -80,6 +80,7 @@ device w100lcd: wsemuldisplaydev, rasops16, rasops8, rasops4, rasops_rotation
 attach w100lcd at pxaip
 file arch/zaurus/dev/w100lcd.c		w100lcd needs-flag
 file arch/zaurus/dev/w100.c		w100lcd
+defflag opt_w100.h			W100_SHADOW
 
 # backlight, brightness Controller
 device lcdctl
