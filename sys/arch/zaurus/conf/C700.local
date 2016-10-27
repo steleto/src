@@ -1,0 +1,128 @@
+#
+# SL-C700 local configuration
+#
+
+no makeoptions	KERNEL_BASE_PHYS
+makeoptions	KERNEL_BASE_PHYS="0xa0200000"
+no makeoptions	LOADADDRESS
+makeoptions	LOADADDRESS="0xc0200000"
+
+# File systems
+no file-system	MFS		# memory file system
+no file-system	CD9660		# ISO 9660 + Rock Ridge file system
+
+# Compatibility options
+no options	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
+no options 	COMPAT_13	# NetBSD 1.3,
+no options 	COMPAT_14	# NetBSD 1.4,
+no options 	COMPAT_15	# NetBSD 1.5,
+no options 	COMPAT_16	# NetBSD 1.6,
+no options 	COMPAT_20	# NetBSD 2.0,
+no options 	COMPAT_30	# NetBSD 3.0,
+no options 	COMPAT_40	# NetBSD 4.0,
+no options 	COMPAT_50	# NetBSD 5.0 compatibility.
+no options 	COMPAT_60	# NetBSD 6.0 compatibility.
+no options 	COMPAT_43	# and 4.3BSD
+
+# Wedge support
+no options 	DKWEDGE_AUTODISCOVER	# Automatically add dk(4) instances
+
+# Kernel root file system and dump configuration.
+no config	netbsd
+config		netbsd		root on ld0a type ?
+
+# remote controller
+no zrc0 at pxaip?
+no wskbd* at zrc?
+
+# LCD
+options		W100_SHADOW
+
+# PCMCIA (CF) devices
+no com* at pcmcia?		# PCMCIA modems/serial ports
+no wi* at pcmcia?		# WaveLAN IEEE 802.11DS
+no wdc* at pcmcia?		# hard disk controller
+
+no atabus* at wdc?
+
+# IDE hard drives
+no wd* at atabus?
+
+# USB Controller and Devices
+no zusb* at pxaip?
+no ohci0 at pxaip?		# USB Host Controller
+
+# USB bus support
+no usb* at ohci?
+
+# USB Hubs
+no uhub* at usb?
+no uhub* at uhub?
+
+# USB HID device
+no uhidev* at uhub?
+
+# USB Mice
+no ums* at uhidev?
+no wsmouse* at ums?
+
+# USB Keyboards
+no ukbd* at uhidev?
+no wskbd* at ukbd?
+
+# USB Generic HID devices
+no uhid* at uhidev?
+
+# USB Mass Storage
+no umass* at uhub?
+no wd* at umass?
+
+# SCSI bus support
+no scsibus* at scsi?
+
+# SCSI devices
+no sd*	at scsibus?		# SCSI disk drives
+no cd*	at scsibus?		# SCSI CD-ROM drives
+no uk*	at scsibus?		# SCSI unknown
+
+# ATAPI bus support
+no atapibus* at atapi?
+
+# ATAPI devices
+no cd*	at atapibus?		# ATAPI CD-ROM drives
+
+# USB Ethernet adapters
+no aue*	at uhub?		# ADMtek AN986 Pegasus based adapters
+no axe*	at uhub?		# ASIX AX88172 based adapters
+no cdce* at uhub?		# CDC, Ethernet Networking Control Model
+no cue*	at uhub?		# CATC USB-EL1201A based adapters
+no kue*	at uhub?		# Kawasaki LSI KL5KUSB101B based adapters
+no udav* at uhub?		# Davicom DM9601 based adapters
+no url*	at uhub?		# Realtek RTL8150L based adapters
+
+# USB Generic driver
+no ugen* at uhub?
+
+# MII/PHY support
+no acphy*  at mii?		# DAltima AC101 and AMD Am79c874 PHYs
+no amhphy* at mii?		# AMD 79c901 Ethernet PHYs
+no bmtphy* at mii?		# Broadcom BCM5201 and BCM5202 PHYs
+no brgphy* at mii?		# Broadcom BCM5400-family PHYs
+no dmphy*  at mii?		# Davicom DM9101 PHYs
+no exphy*  at mii?		# 3Com internal PHYs
+no glxtphy* at mii?		# Level One LXT-1000 PHYs
+no gphyter* at mii?		# NS83861 Gig-E PHY
+no icsphy* at mii?		# Integrated Circuit Systems ICS189x
+no inphy*  at mii?		# Intel 82555 PHYs
+no iophy*  at mii?		# Intel 82553 PHYs
+no lxtphy* at mii?		# Level One LXT-970 PHYs
+no makphy* at mii?		# Marvell Semiconductor 88E1000 PHYs
+no nsphy*  at mii?		# NS83840 PHYs
+no nsphyter* at mii?		# NS83843 PHYs
+no pnaphy* at mii?		# generic HomePNA PHYs
+no qsphy*  at mii?		# Quality Semiconductor QS6612 PHYs
+no sqphy*  at mii?		# Seeq 80220/80221/80223 PHYs
+no tlphy*  at mii?		# ThunderLAN PHYs
+no tqphy*  at mii?		# TDK Semiconductor PHYs
+no ukphy*  at mii?		# generic unknown PHYs
+no urlphy* at mii?		# Realtek RTL8150L internal PHYs

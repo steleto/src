@@ -16,3 +16,6 @@ no scoop1 at pxaip?
 
 no lcd0 at pxaip?
 no wsdisplay* at lcd?
+
+# Pull in optional local configuration
+cinclude "arch/zaurus/conf/C700.local"
