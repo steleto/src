@@ -309,6 +309,7 @@ pvrioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 {
 	struct pvr_softc *sc = v;
 	struct fb_devconfig *dc = sc->sc_dc;
+	struct wsdisplayio_fbinfo *fbinfo;
 
 	switch (cmd) {
 	case WSDISPLAYIO_GTYPE:
@@ -358,6 +359,12 @@ pvrioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 	case WSDISPLAYIO_GVIDEO:
 		*(u_int *)data = dc->dc_blanked ?
 		    WSDISPLAYIO_VIDEO_OFF : WSDISPLAYIO_VIDEO_ON;
+		return 0;
+
+	case WSDISPLAYIO_GET_FBINFO:
+		fbinfo = (struct wsdisplayio_fbinfo *)data;
+		wsdisplayio_get_fbinfo(&dc->dc_rinfo, fbinfo);
+		fbinfo->fbi_flags |= WSFB_VRAM_IS_RAM;
 		return 0;
 
 	case WSDISPLAYIO_GCURPOS:
