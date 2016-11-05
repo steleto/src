@@ -58,7 +58,7 @@ XSERVER_XSUNMONO=	yes
 XSERVER_X68K=		yes
 .endif
 
-.if ${MACHINE} == "zaurus" || ${MACHINE} == "i386"
+.if ${MACHINE} == "zaurus" || ${MACHINE} == "i386" || ${MACHINE} == "dreamcast"
 KDRIVE_LIB=		yes
 KDRIVE_WSFB=		yes
 .endif
