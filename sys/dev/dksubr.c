@@ -1,4 +1,4 @@
-/* $NetBSD: dksubr.c,v 1.89 2016/09/14 23:05:05 mlelstv Exp $ */
+/* $NetBSD: dksubr.c,v 1.93 2016/12/08 12:22:56 mlelstv Exp $ */
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 1999, 2002, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dksubr.c,v 1.89 2016/09/14 23:05:05 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dksubr.c,v 1.93 2016/12/08 12:22:56 mlelstv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -122,6 +122,7 @@ int
 dk_open(struct dk_softc *dksc, dev_t dev,
     int flags, int fmt, struct lwp *l)
 {
+	const struct dkdriver *dkd = dksc->sc_dkdev.dk_driver;
 	struct	disklabel *lp = dksc->sc_dkdev.dk_label;
 	int	part = DISKPART(dev);
 	int	pmask = 1 << part;
@@ -140,6 +141,15 @@ dk_open(struct dk_softc *dksc, dev_t dev,
 	if (dk->dk_nwedges != 0 && part != RAW_PART) {
 		ret = EBUSY;
 		goto done;
+	}
+
+	/*
+	 * initialize driver for the first opener
+	 */
+	if (dk->dk_openmask == 0 && dkd->d_firstopen != NULL) {
+		ret = (*dkd->d_firstopen)(dksc->sc_dev, dev, flags, fmt);
+		if (ret)
+			goto done;
 	}
 
 	/*
@@ -805,6 +815,7 @@ dk_dump(struct dk_softc *dksc, dev_t dev,
 void
 dk_getdefaultlabel(struct dk_softc *dksc, struct disklabel *lp)
 {
+	const struct dkdriver *dkd = dksc->sc_dkdev.dk_driver;
 	struct disk_geom *dg = &dksc->sc_dkdev.dk_geom;
 
 	memset(lp, 0, sizeof(*lp));
@@ -833,7 +844,11 @@ dk_getdefaultlabel(struct dk_softc *dksc, struct disklabel *lp)
 
 	lp->d_magic = DISKMAGIC;
 	lp->d_magic2 = DISKMAGIC;
-	lp->d_checksum = dkcksum(dksc->sc_dkdev.dk_label);
+
+	if (dkd->d_label)
+		dkd->d_label(dksc->sc_dev, lp);
+
+	lp->d_checksum = dkcksum(lp);
 }
 
 /* ARGSUSED */

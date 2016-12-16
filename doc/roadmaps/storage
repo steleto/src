@@ -1,4 +1,4 @@
-$NetBSD: storage,v 1.18 2016/09/21 20:32:47 jdolecek Exp $
+$NetBSD: storage,v 1.20 2016/11/10 21:28:15 jdolecek Exp $
 
 NetBSD Storage Roadmap
 ======================
@@ -92,9 +92,8 @@ best option at this point is:
 + Fixing WAPBL (e.g. to flush newly allocated/newly written blocks to
 disk early) has been examined by several people who know the code base
 and judged difficult. Also, some other problems have come to light
-more recently; e.g. PR 50725, PR 47146, and a problem where truncating
-large sparse files takes ~forever in PR 49175. Also see PR 45676. Still,
-it might be the best way forward.
+more recently; e.g. PR 50725, and 45676. Still, it might be the best
+way forward.
 
 + There is another journaling FFS; the Harvard one done by Margo
 Seltzer's group some years back. We have a copy of this, but as it was
@@ -225,14 +224,14 @@ Semi-relatedly, it is also time for scsipi to become MPSAFE.
  - The nvme driver is a backend to ld(4) which is MPSAFE, but we still
    need to attend to I/O path bottlenecks. Better instrumentation
    is needed.
- - Flush cache commands via DIOCCACHESYNC is currently implemented using polled
-   commands for simplicity, limiting speed to about 10 milliseconds due to use
-   of delay(9); investigate if it's worth changing this to a cv to avoid
-   the delay, especially for journalled/heavy fsync scenarios
+ - Flush cache commands via DIOCCACHESYNC currently doesn't wait for completion;
+   it must not poll since that corrupts command queue, but it should use
+   a condition variable to wait for the flush to actually finish
  - NVMe controllers supports write cache administration via GET/SET FEATURE, but
    driver doesn't currently implement the cache ioctls, leading to somewhat
    ugly dkctl(1) output; it would be fairly simple to add this, but would
-   require small changes to ld(4) attachment code
+   require ld(4) attachment code changed to support passing arbitrary ioctls
+   to attachments
  - There is no clear timeframe or release target for these points.
  - Contact msaitoh or agc for further information.
 

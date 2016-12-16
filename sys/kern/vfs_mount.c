@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_mount.c,v 1.40 2016/07/07 06:55:43 msaitoh Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.42 2016/12/14 15:46:57 hannken Exp $	*/
 
 /*-
  * Copyright (c) 1997-2011 The NetBSD Foundation, Inc.
@@ -67,9 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.40 2016/07/07 06:55:43 msaitoh Exp $");
-
-#define _VFS_VNODE_PRIVATE
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.42 2016/12/14 15:46:57 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -90,7 +88,7 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.40 2016/07/07 06:55:43 msaitoh Exp $
 #include <sys/sysctl.h>
 #include <sys/systm.h>
 #include <sys/vfs_syscalls.h>
-#include <sys/vnode.h>
+#include <sys/vnode_impl.h>
 
 #include <miscfs/genfs/genfs.h>
 #include <miscfs/specfs/specdev.h>
@@ -511,8 +509,8 @@ vflush(struct mount *mp, vnode_t *skipvp, int flags)
 	int error, busy = 0, when = 0;
 	struct vflush_ctx ctx;
 
-	/* First, flush out any vnode references from vrele_list. */
-	vrele_flush();
+	/* First, flush out any vnode references from deferred vrele list. */
+	vfs_drainvnodes();
 
 	vfs_vnode_iterator_init(mp, &marker);
 

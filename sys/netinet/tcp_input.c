@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_input.c,v 1.347 2016/06/10 13:31:44 ozaki-r Exp $	*/
+/*	$NetBSD: tcp_input.c,v 1.350 2016/12/08 05:16:33 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.347 2016/06/10 13:31:44 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.350 2016/12/08 05:16:33 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -262,11 +262,12 @@ static struct timeval tcp_ackdrop_ppslim_last;
 static inline void
 nd6_hint(struct tcpcb *tp)
 {
-	struct rtentry *rt;
+	struct rtentry *rt = NULL;
 
 	if (tp != NULL && tp->t_in6pcb != NULL && tp->t_family == AF_INET6 &&
 	    (rt = rtcache_validate(&tp->t_in6pcb->in6p_route)) != NULL)
 		nd6_nud_hint(rt);
+	rtcache_unref(rt, &tp->t_in6pcb->in6p_route);
 }
 #else
 static inline void
@@ -1346,7 +1347,22 @@ tcp_input(struct mbuf *m, ...)
 		m_freem(m);
 		return;
 	}
-
+	/*
+         * Enforce alignment requirements that are violated in
+	 * some cases, see kern/50766 for details.
+	 */
+	if (TCP_HDR_ALIGNED_P(th) == 0) {
+		m = m_copyup(m, toff + sizeof(struct tcphdr), 0);
+		if (m == NULL) {
+			TCP_STATINC(TCP_STAT_RCVSHORT);
+			return;
+		}
+		ip = mtod(m, struct ip *);
+#ifdef INET6
+		ip6 = mtod(m, struct ip6_hdr *);
+#endif
+		th = (struct tcphdr *)(mtod(m, char *) + toff);
+	}
 	KASSERT(TCP_HDR_ALIGNED_P(th));
 
 	/*
@@ -4513,7 +4529,7 @@ int
 syn_cache_respond(struct syn_cache *sc, struct mbuf *m)
 {
 #ifdef INET6
-	struct rtentry *rt;
+	struct rtentry *rt = NULL;
 #endif
 	struct route *ro;
 	u_int8_t *optp;
@@ -4794,6 +4810,7 @@ syn_cache_respond(struct syn_cache *sc, struct mbuf *m)
 	case AF_INET6:
 		ip6->ip6_hlim = in6_selecthlim(NULL,
 		    (rt = rtcache_validate(ro)) != NULL ? rt->rt_ifp : NULL);
+		rtcache_unref(rt, ro);
 
 		error = ip6_output(m, NULL /*XXX*/, ro, 0, NULL, so, NULL);
 		break;

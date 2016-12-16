@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6_nbr.c,v 1.127 2016/08/01 03:15:31 ozaki-r Exp $	*/
+/*	$NetBSD: nd6_nbr.c,v 1.133 2016/12/14 04:05:11 ozaki-r Exp $	*/
 /*	$KAME: nd6_nbr.c,v 1.61 2001/02/10 16:06:14 jinmei Exp $	*/
 
 /*
@@ -31,10 +31,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6_nbr.c,v 1.127 2016/08/01 03:15:31 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6_nbr.c,v 1.133 2016/12/14 04:05:11 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
+#include "opt_net_mpsafe.h"
 #endif
 
 #include <sys/param.h>
@@ -83,6 +84,7 @@ static void nd6_dad_timer(struct ifaddr *);
 static void nd6_dad_ns_output(struct dadq *, struct ifaddr *);
 static void nd6_dad_ns_input(struct ifaddr *);
 static void nd6_dad_na_input(struct ifaddr *);
+static void nd6_dad_duplicated(struct ifaddr *);
 
 static int dad_ignore_ns = 0;	/* ignore NS in DAD - specwise incorrect*/
 static int dad_maxtry = 15;	/* max # of *tries* to transmit DAD packet */
@@ -255,7 +257,7 @@ nd6_ns_input(struct mbuf *m, int off, int icmp6len)
 			}
 		}
 		if (rt)
-			rtfree(rt);
+			rt_unref(rt);
 	}
 	if (ifa == NULL) {
 		/*
@@ -468,15 +470,16 @@ nd6_ns_output(struct ifnet *ifp, const struct in6_addr *daddr6,
 
 			sockaddr_in6_init(&dst_sa, &ip6->ip6_dst, 0, 0, 0);
 
-			src = in6_selectsrc(&dst_sa, NULL,
-			    NULL, &ro, NULL, NULL, NULL, &error);
-			if (src == NULL) {
+			error = in6_selectsrc(&dst_sa, NULL,
+			    NULL, &ro, NULL, NULL, NULL, &src_in);
+			if (error != 0) {
 				nd6log(LOG_DEBUG, "source can't be "
 				    "determined: dst=%s, error=%d\n",
 				    ip6_sprintf(&dst_sa.sin6_addr), error);
 				pserialize_read_exit(s);
 				goto bad;
 			}
+			src = &src_in;
 		}
 		pserialize_read_exit(s);
 	} else {
@@ -817,18 +820,18 @@ nd6_na_input(struct mbuf *m, int off, int icmp6len)
 			 * context.  However, we keep it just for safety.
 			 */
 			s = splsoftnet();
-			dr = defrouter_lookup(in6, ln->lle_tbl->llt_ifp);
+			dr = nd6_defrouter_lookup(in6, ln->lle_tbl->llt_ifp);
 			if (dr)
-				defrtrlist_del(dr, NULL);
+				nd6_defrtrlist_del(dr, NULL);
 			else if (!ip6_forwarding) {
 				/*
 				 * Even if the neighbor is not in the default
 				 * router list, the neighbor may be used
 				 * as a next hop for some destinations
 				 * (e.g. redirect case). So we must
-				 * call rt6_flush explicitly.
+				 * call nd6_rt_flush explicitly.
 				 */
-				rt6_flush(&ip6->ip6_src, ln->lle_tbl->llt_ifp);
+				nd6_rt_flush(&ip6->ip6_src, ln->lle_tbl->llt_ifp);
 			}
 			splx(s);
 		}
@@ -851,7 +854,7 @@ nd6_na_input(struct mbuf *m, int off, int icmp6len)
 		LLE_WUNLOCK(ln);
 
 	if (checklink)
-		pfxlist_onlink_check();
+		nd6_pfxlist_onlink_check();
 
 	m_put_rcvif_psref(ifp, &psref);
 	m_freem(m);
@@ -893,7 +896,7 @@ nd6_na_output(
 		struct sockaddr		dst;
 		struct sockaddr_in6	dst6;
 	} u;
-	struct in6_addr *src, daddr6;
+	struct in6_addr daddr6;
 	int icmp6len, maxlen, error;
 	const void *mac;
 	struct route ro;
@@ -966,14 +969,14 @@ nd6_na_output(
 	/*
 	 * Select a source whose scope is the same as that of the dest.
 	 */
-	src = in6_selectsrc(satosin6(dst), NULL, NULL, &ro, NULL, NULL, NULL, &error);
-	if (src == NULL) {
+	error = in6_selectsrc(satosin6(dst), NULL, NULL, &ro, NULL, NULL, NULL,
+	    &ip6->ip6_src);
+	if (error != 0) {
 		nd6log(LOG_DEBUG, "source can't be "
 		    "determined: dst=%s, error=%d\n",
 		    ip6_sprintf(&satocsin6(dst)->sin6_addr), error);
 		goto bad;
 	}
-	ip6->ip6_src = *src;
 	nd_na = (struct nd_neighbor_advert *)(ip6 + 1);
 	nd_na->nd_na_type = ND_NEIGHBOR_ADVERT;
 	nd_na->nd_na_code = 0;
@@ -1099,7 +1102,11 @@ static void
 nd6_dad_stoptimer(struct dadq *dp)
 {
 
+#ifdef NET_MPSAFE
+	callout_halt(&dp->dad_timer_ch, NULL);
+#else
 	callout_halt(&dp->dad_timer_ch, softnet_lock);
+#endif
 }
 
 /*
@@ -1223,9 +1230,12 @@ nd6_dad_timer(struct ifaddr *ifa)
 {
 	struct in6_ifaddr *ia = (struct in6_ifaddr *)ifa;
 	struct dadq *dp;
+	int duplicate = 0;
 
+#ifndef NET_MPSAFE
 	mutex_enter(softnet_lock);
 	KERNEL_LOCK(1, NULL);
+#endif
 	mutex_enter(&nd6_dad_lock);
 
 	/* Sanity check */
@@ -1278,10 +1288,6 @@ nd6_dad_timer(struct ifaddr *ifa)
 		 * We have transmitted sufficient number of DAD packets.
 		 * See what we've got.
 		 */
-		int duplicate;
-
-		duplicate = 0;
-
 		if (dp->dad_na_icount) {
 			/*
 			 * the check is in nd6_dad_na_input(),
@@ -1298,7 +1304,6 @@ nd6_dad_timer(struct ifaddr *ifa)
 		if (duplicate) {
 			/* (*dp) will be freed in nd6_dad_duplicated() */
 			dp = NULL;
-			nd6_dad_duplicated(ifa);
 		} else {
 			/*
 			 * We are done with DAD.  No NA came, no NS came.
@@ -1321,11 +1326,17 @@ nd6_dad_timer(struct ifaddr *ifa)
 
 done:
 	mutex_exit(&nd6_dad_lock);
+
+	if (duplicate)
+		nd6_dad_duplicated(ifa);
+
+#ifndef NET_MPSAFE
 	KERNEL_UNLOCK_ONE(NULL);
 	mutex_exit(softnet_lock);
+#endif
 }
 
-void
+static void
 nd6_dad_duplicated(struct ifaddr *ifa)
 {
 	struct in6_ifaddr *ia = (struct in6_ifaddr *)ifa;

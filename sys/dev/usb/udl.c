@@ -1,4 +1,4 @@
-/*	$NetBSD: udl.c,v 1.16 2016/10/17 20:04:48 nat Exp $	*/
+/*	$NetBSD: udl.c,v 1.19 2016/12/04 10:12:35 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2009 FUKAUMI Naoki.
@@ -53,7 +53,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: udl.c,v 1.16 2016/10/17 20:04:48 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udl.c,v 1.19 2016/12/04 10:12:35 skrll Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_usb.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -175,6 +179,7 @@ static int		udl_set_resolution(struct udl_softc *,
 			    const struct videomode *);
 static const struct videomode *udl_videomode_lookup(const char *);
 static void		udl_update_thread(void *);
+static inline void udl_startstop(struct udl_softc *, bool);
 
 static inline void
 udl_cmd_add_1(struct udl_softc *sc, uint8_t val)
@@ -475,6 +480,7 @@ udl_attach(device_t parent, device_t self, void *aux)
 	mutex_init(&sc->sc_thread_mtx, MUTEX_DEFAULT, IPL_NONE);
 	cv_init(&sc->sc_thread_cv, "udlcv");
 	sc->sc_dying = false;
+	sc->sc_thread_stop = true;
 	kthread_create(PRI_BIO, KTHREAD_MPSAFE | KTHREAD_MUSTJOIN, NULL,
 	    udl_update_thread, sc, &sc->sc_thread, "udlupd");
 }
@@ -510,9 +516,11 @@ udl_detach(device_t self, int flags)
 	 * Free framebuffer memory.
 	 */
 	udl_fbmem_free(sc);
-	
+
+	mutex_enter(&sc->sc_thread_mtx);
 	sc->sc_dying = true;
 	cv_broadcast(&sc->sc_thread_cv);
+	mutex_exit(&sc->sc_thread_mtx);
 	kthread_join(sc->sc_thread);
 
 	cv_destroy(&sc->sc_cv);
@@ -571,6 +579,7 @@ udl_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 			return 0;
 		switch (mode) {
 		case WSDISPLAYIO_VIDEO_OFF:
+			udl_startstop(sc, true);
 			udl_blank(sc, 1);
 			break;
 		case WSDISPLAYIO_VIDEO_ON:
@@ -579,7 +588,8 @@ udl_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 		default:
 			return EINVAL;
 		}
-		udl_cmd_send_async(sc);
+		if (UDL_CMD_BUFSIZE(sc) > 0)
+			udl_cmd_send_async(sc);
 		udl_cmdq_flush(sc);
 		sc->sc_blank = mode;
 		return 0;
@@ -590,10 +600,12 @@ udl_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 			return 0;
 		switch (mode) {
 		case WSDISPLAYIO_MODE_EMUL:
+			udl_startstop(sc, true);
 			/* clear screen */
 			udl_fill_rect(sc, 0, 0, 0, sc->sc_width,
 			    sc->sc_height);
-			udl_cmd_send_async(sc);
+			if (UDL_CMD_BUFSIZE(sc) > 0)
+				udl_cmd_send_async(sc);
 			udl_cmdq_flush(sc);
 			udl_comp_unload(sc);
 			break;
@@ -602,6 +614,7 @@ udl_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 				udl_cmd_send_async(sc);
 			udl_cmdq_flush(sc);
 			udl_comp_load(sc);
+			udl_startstop(sc, false);
 			break;
 		default:
 			return EINVAL;
@@ -652,7 +665,8 @@ udl_mmap(void *v, void *vs, off_t off, int prot)
 	if (udl_fbmem_alloc(sc) != 0)
 		return -1;
 
-	cv_broadcast(&sc->sc_thread_cv);
+	udl_startstop(sc, false);
+
 	vaddr = (vaddr_t)sc->sc_fbmem + off;
 	rv = pmap_extract(pmap_kernel(), vaddr, &paddr);
 	KASSERT(rv);
@@ -1401,9 +1415,9 @@ udl_cmd_add_buf_comp(struct udl_softc *sc, uint16_t *buf, int width)
 	}
 
 	/*
- 	 * If we have bits left in our last byte, round up to the next
- 	 * byte, so we don't overwrite them.
- 	 */
+	 * If we have bits left in our last byte, round up to the next
+	 * byte, so we don't overwrite them.
+	 */
 	if (bit_pos > 0) {
 		sc->sc_cmd_buf++;
 		sc->sc_cmd_cblen++;
@@ -1823,7 +1837,7 @@ udl_update_thread(void *v)
 			kthread_exit(0);
 		}
 
-		if (sc->sc_fbmem == NULL)
+		if (sc->sc_thread_stop == true || sc->sc_fbmem == NULL)
 			goto thread_wait;
 
 #ifdef notyet
@@ -1867,7 +1881,7 @@ udl_update_thread(void *v)
 		fb = (uint16_t *)sc->sc_fbmem;
 		for (offs = 0; offs < sc->sc_height * sc->sc_width; offs += stride)
 			udl_draw_line(sc, &fb[offs], offs, stride);
-			
+
 #endif
 
 		kpause("udlslp", false, (40 * hz)/1000 + 1, &sc->sc_thread_mtx);
@@ -1876,4 +1890,14 @@ udl_update_thread(void *v)
 thread_wait:
 		cv_wait(&sc->sc_thread_cv, &sc->sc_thread_mtx);
 	}
+}
+
+static inline void
+udl_startstop(struct udl_softc *sc, bool stop)
+{
+	mutex_enter(&sc->sc_thread_mtx);
+	sc->sc_thread_stop = stop;
+	if (!stop)
+		cv_broadcast(&sc->sc_thread_cv);
+	mutex_exit(&sc->sc_thread_mtx);
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.86 2016/09/25 12:53:24 maxv Exp $	*/
+/*	$NetBSD: trap.c,v 1.88 2016/12/15 12:04:17 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.86 2016/09/25 12:53:24 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.88 2016/12/15 12:04:17 kamil Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -662,9 +662,10 @@ faultcommon:
 		}
 
 #ifdef TRAP_SIGDEBUG
-		printf("pid %d.%d (%s): signal %d at rip %lx addr %lx "
-		    "error %d\n", p->p_pid, l->l_lid, p->p_comm, ksi.ksi_signo,
-		    frame->tf_rip, va, error);
+		printf("pid %d.%d (%s): signal %d at rip %#lx addr %#lx "
+		    "error %d trap %d cr2 %p\n", p->p_pid, l->l_lid, p->p_comm,
+		    ksi.ksi_signo, frame->tf_rip, va, error, ksi.ksi_trap,
+		    ksi.ksi_addr);
 		frame_dump(frame);
 #endif
 		(*p->p_emul->e_trapsignal)(l, &ksi);
@@ -672,6 +673,19 @@ faultcommon:
 	}
 
 	case T_TRCTRAP:
+		/*
+		 * Ignore debug register trace traps due to
+		 * accesses in the user's address space, which
+		 * can happen under several conditions such as
+		 * if a user sets a watchpoint on a buffer and
+		 * then passes that buffer to a system call.
+		 * We still want to get TRCTRAPS for addresses
+		 * in kernel space because that is useful when
+		 * debugging the kernel.
+		 */
+		if (user_trap_x86_hw_watchpoint())
+			break;
+
 		/* Check whether they single-stepped into a lcall. */
 		if (frame->tf_rip == (uint64_t)IDTVEC(oosyscall) ||
 		    frame->tf_rip == (uint64_t)IDTVEC(osyscall) ||

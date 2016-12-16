@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.99 2016/09/27 23:25:10 pgoyette Exp $
+# $NetBSD: mi,v 1.106 2016/12/15 12:56:52 kre Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -30,6 +30,14 @@
 ./@MODULEDIR@/bpf/bpf.kmod			base-kernel-modules	kmod
 ./@MODULEDIR@/bpf_filter			base-kernel-modules	kmod
 ./@MODULEDIR@/bpf_filter/bpf_filter.kmod	base-kernel-modules	kmod
+./@MODULEDIR@/bufq_disksort			base-kernel-modules	kmod
+./@MODULEDIR@/bufq_disksort/bufq_disksort.kmod	base-kernel-modules	kmod
+./@MODULEDIR@/bufq_fcfs				base-kernel-modules	kmod
+./@MODULEDIR@/bufq_fcfs/bufq_fcfs.kmod		base-kernel-modules	kmod
+./@MODULEDIR@/bufq_priocscan			base-kernel-modules	kmod
+./@MODULEDIR@/bufq_priocscan/bufq_priocscan.kmod base-kernel-modules	kmod
+./@MODULEDIR@/bufq_readprio			base-kernel-modules	kmod
+./@MODULEDIR@/bufq_readprio/bufq_readprio.kmod	base-kernel-modules	kmod
 ./@MODULEDIR@/cac				base-obsolete		obsolete
 ./@MODULEDIR@/cac/cac.kmod			base-obsolete		obsolete
 ./@MODULEDIR@/cac_pci				base-obsolete		obsolete
@@ -272,6 +280,10 @@
 ./@MODULEDIR@/procfs/procfs.kmod		base-kernel-modules	kmod
 ./@MODULEDIR@/profile				base-obsolete		obsolete
 ./@MODULEDIR@/profile/profile.kmod		base-obsolete		obsolete
+./@MODULEDIR@/ptrace				base-kernel-modules	kmod
+./@MODULEDIR@/ptrace/ptrace.kmod		base-kernel-modules	kmod
+./@MODULEDIR@/ptrace_common			base-kernel-modules	kmod
+./@MODULEDIR@/ptrace_common/ptrace_common.kmod	base-kernel-modules	kmod
 ./@MODULEDIR@/ptyfs				base-kernel-modules	kmod
 ./@MODULEDIR@/ptyfs/ptyfs.kmod			base-kernel-modules	kmod
 ./@MODULEDIR@/puffs				base-kernel-modules	kmod
@@ -304,6 +316,10 @@
 ./@MODULEDIR@/solaris/solaris.kmod		base-kernel-modules     kmod,solaris
 ./@MODULEDIR@/spdmem				base-kernel-modules	kmod
 ./@MODULEDIR@/spdmem/spdmem.kmod		base-kernel-modules	kmod
+./@MODULEDIR@/spkr				base-kernel-modules	kmod
+./@MODULEDIR@/spkr/_synchspkr._synchkmod	base-obsolete		obsolete
+./@MODULEDIR@/spkr/spkr.kmod			base-kernel-modules	kmod
+./@MODULEDIR@/spkr_synch			base-obsolete		obsolete
 ./@MODULEDIR@/sppp_subr				base-kernel-modules	kmod
 ./@MODULEDIR@/sppp_subr/sppp_subr.kmod		base-kernel-modules	kmod
 ./@MODULEDIR@/suser				base-kernel-modules	kmod

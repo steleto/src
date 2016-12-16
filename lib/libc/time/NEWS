@@ -1,5 +1,122 @@
 News for the tz database
 
+Release 2016i - 2016-11-01 23:19:52 -0700
+
+  Briefly: Cyprus split into two time zones on 2016-10-30, and Tonga
+  reintroduces DST on 2016-11-06.
+
+  Changes to future time stamps
+
+    Pacific/Tongatapu begins DST on 2016-11-06 at 02:00, ending on
+    2017-01-15 at 03:00.  Assume future observances in Tonga will be
+    from the first Sunday in November through the third Sunday in
+    January, like Fiji.  (Thanks to Pulu ʻAnau.)  Switch to numeric
+    time zone abbreviations for this zone.
+
+  Changes to past and future time stamps
+
+    Northern Cyprus is now +03 year round, causing a split in Cyprus
+    time zones starting 2016-10-30 at 04:00.  This creates a zone
+    Asia/Famagusta.  (Thanks to Even Scharning and Matt Johnson.)
+
+    Antarctica/Casey switched from +08 to +11 on 2016-10-22.
+    (Thanks to Steffen Thorsen.)
+
+  Changes to past time stamps
+
+    Several corrections were made for pre-1975 time stamps in Italy.
+    These affect Europe/Malta, Europe/Rome, Europe/San_Marino, and
+    Europe/Vatican.
+
+    First, the 1893-11-01 00:00 transition in Italy used the new UT
+    offset (+01), not the old (+00:49:56).  (Thanks to Michael
+    Deckers.)
+
+    Second, rules for daylight saving in Italy were changed to agree
+    with Italy's National Institute of Metrological Research (INRiM)
+    except for 1944, as follows (thanks to Pierpaolo Bernardi, Brian
+    Inglis, and Michael Deckers):
+
+      The 1916-06-03 transition was at 24:00, not 00:00.
+
+      The 1916-10-01, 1919-10-05, and 1920-09-19 transitions were at
+      00:00, not 01:00.
+
+      The 1917-09-30 and 1918-10-06 transitions were at 24:00, not
+      01:00.
+
+      The 1944-09-17 transition was at 03:00, not 01:00.  This
+      particular change is taken from Italian law as INRiM's table,
+      (which says 02:00) appears to have a typo here.  Also, keep the
+      1944-04-03 transition for Europe/Rome, as Rome was controlled by
+      Germany then.
+
+      The 1967-1970 and 1972-1974 fallback transitions were at 01:00,
+      not 00:00.
+
+  Changes to code
+
+    The code should now be buildable on AmigaOS merely by setting the
+    appropriate Makefile variables.  (From a patch by Carsten Larsen.)
+
+
+Release 2016h - 2016-10-19 23:17:57 -0700
+
+  Changes to future time stamps
+
+    Asia/Gaza and Asia/Hebron end DST on 2016-10-29 at 01:00, not
+    2016-10-21 at 00:00.  (Thanks to Sharef Mustafa.)  Predict that
+    future fall transitions will be on the last Saturday of October
+    at 01:00, which is consistent with predicted spring transitions
+    on the last Saturday of March.  (Thanks to Tim Parenti.)
+
+  Changes to past time stamps
+
+    In Turkey, transitions in 1986-1990 were at 01:00 standard time
+    not at 02:00, and the spring 1994 transition was on March 20, not
+    March 27.  (Thanks to Kıvanç Yazan.)
+
+  Changes to past and future time zone abbreviations
+
+    Asia/Colombo now uses numeric time zone abbreviations like "+0530"
+    instead of alphabetic ones like "IST" and "LKT".  Various
+    English-language sources use "IST", "LKT" and "SLST", with no
+    working consensus.  (Usage of "SLST" mentioned by Sadika
+    Sumanapala.)
+
+  Changes to code
+
+    zic no longer mishandles relativizing file names when creating
+    symbolic links like /etc/localtime, when these symbolic links
+    are outside the usual directory hierarchy.  This fixes a bug
+    introduced in 2016g.  (Problem reported by Andreas Stieger.)
+
+  Changes to build procedure
+
+    New rules 'traditional_tarballs' and 'traditional_signatures' for
+    building just the traditional-format distribution.  (Requested by
+    Deborah Goldsmith.)
+
+    The file 'version' is now put into the tzdata tarball too.
+    (Requested by Howard Hinnant.)
+
+  Changes to documentation and commentary
+
+    The 'Theory' file now has a section on interface stability.
+    (Requested by Paul Koning.)  It also mentions features like
+    tm_zone and localtime_rz that have long been supported by the
+    reference code.
+
+    tz-link.htm has improved coverage of time zone boundaries suitable
+    for geolocation.  (Thanks to heads-ups from Evan Siroky and Matt
+    Johnson.)
+
+    The US commentary now mentions Allen and the "day of two noons".
+
+    The Fiji commentary mentions the government's 2016-10-03 press
+    release.  (Thanks to Raymond Kumar.)
+
+
 Release 2016g - 2016-09-13 08:56:38 -0700
 
   Changes to future time stamps

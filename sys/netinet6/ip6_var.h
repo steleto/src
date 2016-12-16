@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_var.h,v 1.68 2016/08/23 09:59:20 knakahara Exp $	*/
+/*	$NetBSD: ip6_var.h,v 1.71 2016/12/08 05:16:34 ozaki-r Exp $	*/
 /*	$KAME: ip6_var.h,v 1.33 2000/06/11 14:59:20 jinmei Exp $	*/
 
 /*
@@ -377,7 +377,7 @@ void	frag6_drainstub(void);
 int	ip6flow_init(int);
 void	ip6flow_poolinit(void);
 struct  ip6flow *ip6flow_reap(int);
-void    ip6flow_create(const struct route *, struct mbuf *);
+void    ip6flow_create(struct route *, struct mbuf *);
 void    ip6flow_slowtimo(void);
 int	ip6flow_invalidate_all(int);
 
@@ -396,12 +396,11 @@ int	none_input(struct mbuf **, int *, int);
 
 struct route;
 
-struct 	in6_addr *in6_selectsrc(struct sockaddr_in6 *,
-	struct ip6_pktopts *, struct ip6_moptions *, struct route *,
-	struct in6_addr *, struct ifnet **, struct psref *, int *);
+int	in6_selectsrc(struct sockaddr_in6 *, struct ip6_pktopts *,
+	   struct ip6_moptions *, struct route *, struct in6_addr *,
+	   struct ifnet **, struct psref *, struct in6_addr *);
 int in6_selectroute(struct sockaddr_in6 *, struct ip6_pktopts *,
-	struct ip6_moptions *, struct route *, struct ifnet **,
-	struct psref *, struct rtentry **, int);
+	struct route **, struct rtentry **, bool);
 int	ip6_get_membership(const struct sockopt *, struct ifnet **, void *,
 	size_t);
 

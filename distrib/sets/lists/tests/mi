@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.687 2016/10/04 04:15:25 ozaki-r Exp $
+# $NetBSD: mi,v 1.709 2016/12/15 12:56:52 kre Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -25,9 +25,9 @@
 ./usr/libdata/debug/usr/tests/dev					tests-fs-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/dev/audio					tests-fs-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/dev/cgd					tests-fs-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/dev/cgd/h_img2cgd				tests-obsolete		obsolete
 ./usr/libdata/debug/usr/tests/dev/clock_subr				tests-fs-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/dev/fss					tests-fs-debug		compattestfile,atf
-./usr/libdata/debug/usr/tests/dev/cgd/h_img2cgd				tests-obsolete		obsolete
 ./usr/libdata/debug/usr/tests/dev/md					tests-fs-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/dev/scsipi				tests-fs-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/dev/sysmon				tests-fs-debug		compattestfile,atf
@@ -55,6 +55,9 @@
 ./usr/libdata/debug/usr/tests/include/sys				tests-include-tests	compattestfile,atf
 ./usr/libdata/debug/usr/tests/ipf					tests-ipf-tests		compattestfile,atf
 ./usr/libdata/debug/usr/tests/kernel					tests-kernel-tests	compattestfile,atf
+./usr/libdata/debug/usr/tests/kernel/arch				tests-kernel-tests	compattestfile,atf
+./usr/libdata/debug/usr/tests/kernel/arch/amd64				tests-kernel-tests	compattestfile,atf
+./usr/libdata/debug/usr/tests/kernel/arch/i386				tests-kernel-tests	compattestfile,atf
 ./usr/libdata/debug/usr/tests/kernel/kqueue				tests-kernel-tests	compattestfile,atf
 ./usr/libdata/debug/usr/tests/kernel/kqueue/read			tests-kernel-tests	compattestfile,atf
 ./usr/libdata/debug/usr/tests/kernel/kqueue/write			tests-kernel-tests	compattestfile,atf
@@ -88,6 +91,7 @@
 ./usr/libdata/debug/usr/tests/lib/libc/c063				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/db				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/gen				tests-lib-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/lib/libc/gen/exect			tests-kernel-tests	compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/gen/execve			tests-kernel-tests	compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/gen/posix_spawn			tests-kernel-tests	compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/getaddrinfo			tests-obsolete		obsolete
@@ -128,6 +132,8 @@
 ./usr/libdata/debug/usr/tests/lib/libprop				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libpthread				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libpthread/dlopen			tests-lib-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/lib/libpthread_dbg			tests-lib-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/lib/librefuse				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/librt					tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/librumpclient				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/librumphijack				tests-lib-debug		compattestfile,atf
@@ -1258,9 +1264,9 @@
 ./usr/tests/bin/sh/dotcmd/while_return_subshell	tests-bin-tests	compattestfile,atf
 ./usr/tests/bin/sh/dotcmd/while_return_until	tests-bin-tests	compattestfile,atf
 ./usr/tests/bin/sh/dotcmd/while_return_while	tests-bin-tests	compattestfile,atf
-./usr/tests/bin/sh/t_compexit			tests-obsolete		obsolete
 ./usr/tests/bin/sh/t_arith			tests-bin-tests		compattestfile,atf
 ./usr/tests/bin/sh/t_cmdsub			tests-bin-tests		compattestfile,atf
+./usr/tests/bin/sh/t_compexit			tests-obsolete		obsolete
 ./usr/tests/bin/sh/t_evaltested			tests-bin-tests		compattestfile,atf
 ./usr/tests/bin/sh/t_exit			tests-bin-tests		compattestfile,atf
 ./usr/tests/bin/sh/t_expand			tests-bin-tests		compattestfile,atf
@@ -1366,6 +1372,9 @@
 ./usr/tests/dev/cgd/h_img2cgd/h_img2cgd		tests-obsolete		obsolete
 ./usr/tests/dev/cgd/paramsfile			tests-fs-tests		compattestfile,atf
 ./usr/tests/dev/cgd/t_cgd			tests-fs-tests		compattestfile,atf
+./usr/tests/dev/cgd/t_cgd_3des			tests-fs-tests		atf,compattestfile,crypto,rump
+./usr/tests/dev/cgd/t_cgd_aes			tests-fs-tests		atf,compattestfile,crypto,rump
+./usr/tests/dev/cgd/t_cgd_blowfish		tests-fs-tests		atf,compattestfile,crypto,rump
 ./usr/tests/dev/clock_subr			tests-fs-tests		compattestfile,atf
 ./usr/tests/dev/clock_subr/Atffile		tests-fs-tests		compattestfile,atf
 ./usr/tests/dev/clock_subr/Kyuafile		tests-fs-tests		compattestfile,atf,kyua
@@ -2075,6 +2084,27 @@
 ./usr/tests/kernel				tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/Atffile			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/Kyuafile			tests-kernel-tests	compattestfile,atf,kyua
+./usr/tests/kernel/arch				tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/arch/Atffile			tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/arch/Kyuafile		tests-kernel-tests	compattestfile,atf,kyua
+./usr/tests/kernel/arch/amd64			tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/arch/amd64/Atffile		tests-kernel-tests	compattestfile,atf,machine=amd64
+./usr/tests/kernel/arch/amd64/Kyuafile		tests-kernel-tests	compattestfile,atf,kyua,machine=amd64
+./usr/tests/kernel/arch/amd64/t_ptrace_wait	tests-kernel-tests	compattestfile,atf,machine=amd64
+./usr/tests/kernel/arch/amd64/t_ptrace_wait3	tests-kernel-tests	compattestfile,atf,machine=amd64
+./usr/tests/kernel/arch/amd64/t_ptrace_wait4	tests-kernel-tests	compattestfile,atf,machine=amd64
+./usr/tests/kernel/arch/amd64/t_ptrace_wait6	tests-kernel-tests	compattestfile,atf,machine=amd64
+./usr/tests/kernel/arch/amd64/t_ptrace_waitid	tests-kernel-tests	compattestfile,atf,machine=amd64
+./usr/tests/kernel/arch/amd64/t_ptrace_waitpid	tests-kernel-tests	compattestfile,atf,machine=amd64
+./usr/tests/kernel/arch/i386			tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/arch/i386/Atffile		tests-kernel-tests	compattestfile,atf,machine=i386
+./usr/tests/kernel/arch/i386/Kyuafile		tests-kernel-tests	compattestfile,atf,kyua,machine=i386
+./usr/tests/kernel/arch/i386/t_ptrace_wait	tests-kernel-tests	compattestfile,atf,machine=i386
+./usr/tests/kernel/arch/i386/t_ptrace_wait3	tests-kernel-tests	compattestfile,atf,machine=i386
+./usr/tests/kernel/arch/i386/t_ptrace_wait4	tests-kernel-tests	compattestfile,atf,machine=i386
+./usr/tests/kernel/arch/i386/t_ptrace_wait6	tests-kernel-tests	compattestfile,atf,machine=i386
+./usr/tests/kernel/arch/i386/t_ptrace_waitid	tests-kernel-tests	compattestfile,atf,machine=i386
+./usr/tests/kernel/arch/i386/t_ptrace_waitpid	tests-kernel-tests	compattestfile,atf,machine=i386
 ./usr/tests/kernel/h_ps_strings1		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/h_ps_strings2		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/kqueue			tests-kernel-tests	compattestfile,atf
@@ -2125,6 +2155,13 @@
 ./usr/tests/kernel/t_posix_fadvise		tests-obsolete		obsolete
 ./usr/tests/kernel/t_posix_fallocate		tests-obsolete		obsolete
 ./usr/tests/kernel/t_ps_strings			tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_ptrace			tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_ptrace_wait		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_ptrace_wait3		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_ptrace_wait4		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_ptrace_wait6		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_ptrace_waitid		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_ptrace_waitpid		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_pty			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_rnd			tests-kernel-tests	atf,rump
 ./usr/tests/kernel/t_sigaction			tests-obsolete		obsolete
@@ -2391,6 +2428,10 @@
 ./usr/tests/lib/libc/gen			tests-lib-tests	compattestfile,atf
 ./usr/tests/lib/libc/gen/Atffile		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/gen/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
+./usr/tests/lib/libc/gen/exect			tests-kernel-tests	compattestfile,atf
+./usr/tests/lib/libc/gen/exect/Atffile		tests-kernel-tests	compattestfile,atf
+./usr/tests/lib/libc/gen/exect/Kyuafile		tests-kernel-tests	compattestfile,atf,kyua
+./usr/tests/lib/libc/gen/exect/t_exect		tests-kernel-tests	compattestfile,atf
 ./usr/tests/lib/libc/gen/execve			tests-kernel-tests	compattestfile,atf
 ./usr/tests/lib/libc/gen/execve/Atffile		tests-kernel-tests	compattestfile,atf
 ./usr/tests/lib/libc/gen/execve/Kyuafile	tests-kernel-tests	compattestfile,atf,kyua
@@ -2675,6 +2716,7 @@
 ./usr/tests/lib/libc/sys/t_cerror		tests-obsolete		obsolete
 ./usr/tests/lib/libc/sys/t_chroot		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_clock_gettime	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_clock_nanosleep	tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_clone		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_connect		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_context		tests-obsolete		obsolete
@@ -2733,6 +2775,8 @@
 ./usr/tests/lib/libc/sys/t_umask		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_unlink		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_wait			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_wait_noproc		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_wait_noproc_wnohang	tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_write		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/t_atexit			tests-obsolete		obsolete
 ./usr/tests/lib/libc/t_cdb			tests-lib-tests		compattestfile,atf
@@ -3000,6 +3044,15 @@
 ./usr/tests/lib/libpthread/t_sleep		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libpthread/t_status		tests-obsolete		obsolete
 ./usr/tests/lib/libpthread/t_swapcontext	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libpthread/t_timedmutex		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libpthread_dbg			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libpthread_dbg/Atffile		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libpthread_dbg/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
+./usr/tests/lib/libpthread_dbg/t_dummy		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libpthread_dbg/t_threads	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/librefuse			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/librefuse/Atffile		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/librefuse/t_refuse_opt		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/librt				tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/librt/Atffile			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/librt/Kyuafile			tests-lib-tests		compattestfile,atf,kyua
@@ -3211,6 +3264,10 @@
 ./usr/tests/net/if_tun/Atffile			tests-net-tests		atf,rump
 ./usr/tests/net/if_tun/Kyuafile			tests-net-tests		atf,rump,kyua
 ./usr/tests/net/if_tun/t_tun			tests-net-tests		atf,rump
+./usr/tests/net/if_vlan				tests-net-tests		compattestfile,atf
+./usr/tests/net/if_vlan/Atffile			tests-net-tests		atf,rump
+./usr/tests/net/if_vlan/Kyuafile		tests-net-tests		atf,rump,kyua
+./usr/tests/net/if_vlan/t_vlan			tests-net-tests		atf,rump
 ./usr/tests/net/in_cksum			tests-net-tests		compattestfile,atf
 ./usr/tests/net/in_cksum/Atffile		tests-net-tests		compattestfile,atf
 ./usr/tests/net/in_cksum/Kyuafile		tests-net-tests		compattestfile,atf,kyua
@@ -3241,9 +3298,11 @@
 ./usr/tests/net/net/Kyuafile			tests-net-tests		compattestfile,atf,kyua
 ./usr/tests/net/net/t_forwarding		tests-net-tests		atf,rump
 ./usr/tests/net/net/t_ipaddress			tests-net-tests		atf,rump
-./usr/tests/net/net/t_ipv6address		tests-net-tests		atf,rump
 ./usr/tests/net/net/t_ipv6_lifetime		tests-net-tests		atf,rump
+./usr/tests/net/net/t_ipv6address		tests-net-tests		atf,rump
 ./usr/tests/net/net/t_mtudisc			tests-net-tests		atf,rump
+./usr/tests/net/net/t_mtudisc6			tests-net-tests		atf,rump
+./usr/tests/net/net/t_ping6_opts		tests-net-tests		atf,rump
 ./usr/tests/net/net/t_pktinfo			tests-net-tests		compattestfile,atf
 ./usr/tests/net/net/t_raw			tests-net-tests		atf,rump
 ./usr/tests/net/net/t_tcp			tests-net-tests		compattestfile,atf
@@ -3319,17 +3378,17 @@
 ./usr/tests/sbin/gpt				tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/Atffile			tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/Kyuafile			tests-sbin-tests	compattestfile,atf,kyua
-./usr/tests/sbin/gpt/t_gpt			tests-sbin-tests	compattestfile,atf
-./usr/tests/sbin/gpt/gpt.disklabel		tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.2part.show.label	tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.2part.show.normal	tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.2part.show.uuid	tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.backup			tests-sbin-tests	compattestfile,atf
+./usr/tests/sbin/gpt/gpt.disklabel		tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.disklabel.show.normal	tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.empty.show.normal 	tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.removepart.show.normal	tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.resizedisk.show.normal	tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/gpt/gpt.resizepart.show.normal	tests-sbin-tests	compattestfile,atf
+./usr/tests/sbin/gpt/t_gpt			tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/ifconfig			tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/ifconfig/Atffile		tests-sbin-tests	compattestfile,atf
 ./usr/tests/sbin/ifconfig/Kyuafile		tests-sbin-tests	compattestfile,atf,kyua
@@ -3816,6 +3875,15 @@
 ./usr/tests/usr.bin/unifdef/d_basic.in		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/unifdef/d_basic.out		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/unifdef/t_basic		tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/uniq			tests-usr.bin-tests compattestfile,atf
+./usr/tests/usr.bin/uniq/Atffile	tests-usr.bin-tests compattestfile,atf
+./usr/tests/usr.bin/uniq/d_basic.in		tests-usr.bin-tests compattestfile,atf
+./usr/tests/usr.bin/uniq/d_basic.out	tests-usr.bin-tests compattestfile,atf
+./usr/tests/usr.bin/uniq/d_counts.out	tests-usr.bin-tests compattestfile,atf
+./usr/tests/usr.bin/uniq/d_input.in		tests-usr.bin-tests compattestfile,atf
+./usr/tests/usr.bin/uniq/d_show_duplicates.out 		tests-usr.bin-tests compattestfile,atf
+./usr/tests/usr.bin/uniq/d_show_uniques.out		tests-usr.bin-tests compattestfile,atf
+./usr/tests/usr.bin/uniq/t_uniq 	tests-usr.bin-tests compattestfile,atf
 ./usr/tests/usr.bin/vmstat			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/vmstat/Atffile		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/vmstat/Kyuafile		tests-usr.bin-tests	compattestfile,atf,kyua
@@ -3841,8 +3909,8 @@
 ./usr/tests/usr.bin/xlint/lint1/d_c99_nested_struct.c		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/d_c99_recursive_init.c		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/d_c99_struct_init.c		tests-usr.bin-tests	compattestfile,atf
-./usr/tests/usr.bin/xlint/lint1/d_c99_union_init1.c		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/d_c99_union_cast.c		tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/d_c99_union_init1.c		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/d_c99_union_init2.c		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/d_c99_union_init3.c		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/d_c99_union_init4.c		tests-usr.bin-tests	compattestfile,atf

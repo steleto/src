@@ -1,4 +1,4 @@
-/* $NetBSD: dkvar.h,v 1.25 2015/12/21 12:33:12 mlelstv Exp $ */
+/* $NetBSD: dkvar.h,v 1.27 2016/10/24 17:14:27 jdolecek Exp $ */
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.

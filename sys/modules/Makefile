@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.180 2016/10/15 12:38:03 skrll Exp $
+#	$NetBSD: Makefile,v 1.188 2016/12/15 06:48:14 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -11,6 +11,10 @@ SUBDIR+=	aio
 SUBDIR+=	blowfish
 SUBDIR+=	bpf
 SUBDIR+=	bpf_filter
+SUBDIR+=	bufq_disksort
+SUBDIR+=	bufq_fcfs
+SUBDIR+=	bufq_priocscan
+SUBDIR+=	bufq_readprio
 SUBDIR+=	camellia
 SUBDIR+=	cast128
 SUBDIR+=	ccd
@@ -96,6 +100,8 @@ SUBDIR+=	pf
 SUBDIR+=	ppp_bsdcomp
 SUBDIR+=	ppp_deflate
 SUBDIR+=	procfs
+SUBDIR+=	ptrace
+SUBDIR+=	ptrace_common
 SUBDIR+=	ptyfs
 SUBDIR+=	puffs
 SUBDIR+=	putter
@@ -110,6 +116,7 @@ SUBDIR+=	skipjack
 SUBDIR+=	slcompress
 SUBDIR+=	smbfs
 SUBDIR+=	spdmem
+SUBDIR+=	spkr
 SUBDIR+=	sppp_subr
 SUBDIR+=	sysmon
 SUBDIR+=	sysmon_envsys
@@ -236,6 +243,7 @@ SUBDIR+=	wmimsi
 SUBDIR+=	compat_netbsd32
 SUBDIR+=	compat_netbsd32_mqueue
 SUBDIR+=	compat_netbsd32_nfssrv
+SUBDIR+=	compat_netbsd32_ptrace
 SUBDIR+=	compat_netbsd32_sysvipc
 .endif
 
@@ -244,6 +252,7 @@ SUBDIR+=	compat_linux32
 SUBDIR+=	compat_netbsd32
 SUBDIR+=	compat_netbsd32_mqueue
 SUBDIR+=	compat_netbsd32_nfssrv
+SUBDIR+=	compat_netbsd32_ptrace
 SUBDIR+=	compat_netbsd32_sysvipc
 .endif
 
@@ -357,7 +366,6 @@ SUBDIR+=	auvitek
 SUBDIR+=	coram
 SUBDIR+=	cxdtv
 SUBDIR+=	emdtv
-SUBDIR+=	spkr
 .endif
 
 .if (${MKISCSI} != "no")

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vioif.c,v 1.26 2016/09/27 03:33:32 pgoyette Exp $	*/
+/*	$NetBSD: if_vioif.c,v 1.29 2016/12/15 09:28:05 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 2010 Minoura Makoto.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.26 2016/09/27 03:33:32 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.29 2016/12/15 09:28:05 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -672,6 +672,7 @@ skip:
 	sc->sc_ethercom.ec_capabilities |= ETHERCAP_VLAN_MTU;
 
 	if_attach(ifp);
+	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, sc->sc_mac);
 
 	return;
@@ -823,7 +824,6 @@ retry:
 		r = virtio_enqueue_reserve(vsc, vq, slot,
 					sc->sc_tx_dmamaps[slot]->dm_nsegs + 1);
 		if (r != 0) {
-			virtio_enqueue_abort(vsc, vq, slot);
 			bus_dmamap_unload(vsc->sc_dmat,
 					  sc->sc_tx_dmamaps[slot]);
 			ifp->if_flags |= IFF_OACTIVE;
@@ -1036,8 +1036,6 @@ vioif_rx_deq_locked(struct vioif_softc *sc)
 		virtio_dequeue_commit(vsc, vq, slot);
 		m_set_rcvif(m, ifp);
 		m->m_len = m->m_pkthdr.len = len;
-		ifp->if_ipackets++;
-		bpf_mtap(ifp, m);
 
 		VIOIF_RX_UNLOCK(sc);
 		if_percpuq_enqueue(ifp->if_percpuq, m);
@@ -1131,7 +1129,7 @@ vioif_tx_vq_done(struct virtqueue *vq)
 out:
 	VIOIF_TX_UNLOCK(sc);
 	if (r)
-		vioif_start(ifp);
+		if_schedule_deferred_start(ifp);
 	return r;
 }
 

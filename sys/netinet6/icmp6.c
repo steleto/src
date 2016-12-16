@@ -1,4 +1,4 @@
-/*	$NetBSD: icmp6.c,v 1.198 2016/10/18 02:46:21 ozaki-r Exp $	*/
+/*	$NetBSD: icmp6.c,v 1.203 2016/12/12 03:55:57 ozaki-r Exp $	*/
 /*	$KAME: icmp6.c,v 1.217 2001/06/20 15:03:29 jinmei Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.198 2016/10/18 02:46:21 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.203 2016/12/12 03:55:57 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -481,6 +481,20 @@ icmp6_input(struct mbuf **mp, int *offp, int proto)
 		ICMP6_STATINC(ICMP6_STAT_TOOSHORT);
 		icmp6_ifstat_inc(rcvif, ifs6_in_error);
 		goto freeit;
+	}
+	/*
+	 * Enforce alignment requirements that are violated in
+	 * some cases, see kern/50766 for details.
+	 */
+	if (IP6_HDR_ALIGNED_P(icmp6) == 0) {
+		m = m_copyup(m, off + sizeof(struct icmp6_hdr), 0);
+		if (m == NULL) {
+			ICMP6_STATINC(ICMP6_STAT_TOOSHORT);
+			icmp6_ifstat_inc(rcvif, ifs6_in_error);
+			goto freeit;
+		}
+		ip6 = mtod(m, struct ip6_hdr *);
+		icmp6 = (struct icmp6_hdr *)(ip6 + 1);
 	}
 	KASSERT(IP6_HDR_ALIGNED_P(icmp6));
 
@@ -1150,7 +1164,7 @@ icmp6_mtudisc_update(struct ip6ctlparam *ip6cp, int validated)
 		}
 	}
 	if (rt) {
-		rtfree(rt);
+		rt_unref(rt);
 	}
 
 	/*
@@ -1999,9 +2013,9 @@ icmp6_reflect(struct mbuf *m, size_t off)
 	int type, code;
 	struct ifnet *outif = NULL;
 	struct in6_addr origdst;
-	const struct in6_addr *src = NULL;
 	struct ifnet *rcvif;
 	int s;
+	bool ip6_src_filled = false;
 
 	/* too short to reflect */
 	if (off < sizeof(struct ip6_hdr)) {
@@ -2069,8 +2083,10 @@ icmp6_reflect(struct mbuf *m, size_t off)
 		;
 	else if ((ip6a = ip6_getdstifaddr(m)) != NULL) {
 		if ((ip6a->ip6a_flags &
-		     (IN6_IFF_ANYCAST|IN6_IFF_NOTREADY)) == 0)
-			src = &ip6a->ip6a_src;
+		     (IN6_IFF_ANYCAST|IN6_IFF_NOTREADY)) == 0) {
+			ip6->ip6_src = ip6a->ip6a_src;
+			ip6_src_filled = true;
+		}
 	} else {
 		union {
 			struct sockaddr_in6 sin6;
@@ -2087,13 +2103,15 @@ icmp6_reflect(struct mbuf *m, size_t off)
 		if (ifa != NULL) {
 			ia = ifatoia6(ifa);
 			if ((ia->ia6_flags &
-				 (IN6_IFF_ANYCAST|IN6_IFF_NOTREADY)) == 0)
-				src = &ia->ia_addr.sin6_addr;
+				 (IN6_IFF_ANYCAST|IN6_IFF_NOTREADY)) == 0) {
+				ip6->ip6_src = ia->ia_addr.sin6_addr;
+				ip6_src_filled = true;
+			}
 		}
 		pserialize_read_exit(_s);
 	}
 
-	if (src == NULL) {
+	if (!ip6_src_filled) {
 		int e;
 		struct sockaddr_in6 sin6;
 		struct route ro;
@@ -2107,9 +2125,10 @@ icmp6_reflect(struct mbuf *m, size_t off)
 		sockaddr_in6_init(&sin6, &ip6->ip6_dst, 0, 0, 0);
 
 		memset(&ro, 0, sizeof(ro));
-		src = in6_selectsrc(&sin6, NULL, NULL, &ro, NULL, NULL, NULL, &e);
+		e = in6_selectsrc(&sin6, NULL, NULL, &ro, NULL, NULL, NULL,
+		    &ip6->ip6_src);
 		rtcache_free(&ro);
-		if (src == NULL) {
+		if (e != 0) {
 			nd6log(LOG_DEBUG,
 			    "source can't be determined: "
 			    "dst=%s, error=%d\n",
@@ -2118,7 +2137,6 @@ icmp6_reflect(struct mbuf *m, size_t off)
 		}
 	}
 
-	ip6->ip6_src = *src;
 	ip6->ip6_flow = 0;
 	ip6->ip6_vfc &= ~IPV6_VERSION_MASK;
 	ip6->ip6_vfc |= IPV6_VERSION;
@@ -2241,7 +2259,7 @@ icmp6_redirect_input(struct mbuf *m, int off)
 			    "ICMP6 redirect rejected; no route "
 			    "with inet6 gateway found for redirect dst: %s\n",
 			    icmp6_redirect_diag(&src6, &reddst6, &redtgt6));
-			rtfree(rt);
+			rt_unref(rt);
 			goto bad;
 		}
 
@@ -2252,7 +2270,7 @@ icmp6_redirect_input(struct mbuf *m, int off)
 			    "not equal to gw-for-src=%s (must be same): %s\n",
 			    ip6_sprintf(gw6),
 			    icmp6_redirect_diag(&src6, &reddst6, &redtgt6));
-			rtfree(rt);
+			rt_unref(rt);
 			goto bad;
 		}
 	} else {
@@ -2261,7 +2279,7 @@ icmp6_redirect_input(struct mbuf *m, int off)
 		    icmp6_redirect_diag(&src6, &reddst6, &redtgt6));
 		goto bad;
 	}
-	rtfree(rt);
+	rt_unref(rt);
 	rt = NULL;
     }
 	if (IN6_IS_ADDR_MULTICAST(&reddst6)) {
@@ -2355,7 +2373,7 @@ icmp6_redirect_input(struct mbuf *m, int off)
 		if (newrt) {
 			(void)rt_timer_add(newrt, icmp6_redirect_timeout,
 			    icmp6_redirect_timeout_q);
-			rtfree(newrt);
+			rt_unref(newrt);
 		}
 	}
 	/* finally update cached route in each socket via pfctlinput */
@@ -2403,8 +2421,10 @@ icmp6_redirect_output(struct mbuf *m0, struct rtentry *rt)
 		goto fail;
 
 	/* sanity check */
-	if (!m0 || !rt || !(rt->rt_flags & RTF_UP) || !(ifp = rt->rt_ifp))
-		goto fail;
+	KASSERT(m0 != NULL);
+	KASSERT(rt != NULL);
+
+	ifp = rt->rt_ifp;
 
 	/*
 	 * Address check:
@@ -2740,17 +2760,17 @@ icmp6_mtudisc_clone(struct sockaddr *dst)
 		error = rtrequest(RTM_ADD, dst, rt->rt_gateway, NULL,
 		    RTF_GATEWAY | RTF_HOST | RTF_DYNAMIC, &nrt);
 		if (error) {
-			rtfree(rt);
+			rt_unref(rt);
 			return NULL;
 		}
 		nrt->rt_rmx = rt->rt_rmx;
-		rtfree(rt);
+		rt_unref(rt);
 		rt = nrt;
 	}
 	error = rt_timer_add(rt, icmp6_mtudisc_timeout,
 			icmp6_mtudisc_timeout_q);
 	if (error) {
-		rtfree(rt);
+		rt_unref(rt);
 		return NULL;
 	}
 
@@ -2831,8 +2851,7 @@ sysctl_net_inet6_icmp6_redirtimeout(SYSCTLFN_ARGS)
 
 	if (icmp6_redirect_timeout_q != NULL) {
 		if (icmp6_redirtimeout == 0) {
-			rt_timer_queue_destroy(icmp6_redirect_timeout_q,
-			    true);
+			rt_timer_queue_destroy(icmp6_redirect_timeout_q);
 		} else {
 			rt_timer_queue_change(icmp6_redirect_timeout_q,
 			    icmp6_redirtimeout);

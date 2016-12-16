@@ -1,4 +1,4 @@
-/*	$NetBSD: conf.h,v 1.146 2016/01/17 23:16:46 christos Exp $	*/
+/*	$NetBSD: conf.h,v 1.149 2016/12/09 19:13:47 nat Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -63,6 +63,7 @@ struct vnode;
 #define	D_TYPEMASK	0x00ff
 #define	D_MPSAFE	0x0100
 #define	D_NEGOFFSAFE	0x0200
+#define	D_MCLOSE	0x0400
 
 /*
  * Block device switch table
@@ -174,7 +175,9 @@ dev_type_kqfilter(cdev_kqfilter);
 dev_type_discard(cdev_discard);
 
 int	cdev_type(dev_t);
+int	cdev_flags(dev_t);
 int	bdev_type(dev_t);
+int	bdev_flags(dev_t);
 
 /* symbolic sleep message strings */
 extern	const char devopn[], devio[], devwait[], devin[], devout[];

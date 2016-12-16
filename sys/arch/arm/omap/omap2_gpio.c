@@ -1,4 +1,4 @@
-/*	$NetBSD: omap2_gpio.c,v 1.19 2016/10/15 15:11:56 kiyohara Exp $	*/
+/*	$NetBSD: omap2_gpio.c,v 1.21 2016/10/18 14:08:53 kiyohara Exp $	*/
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -28,7 +28,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: omap2_gpio.c,v 1.19 2016/10/15 15:11:56 kiyohara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omap2_gpio.c,v 1.21 2016/10/18 14:08:53 kiyohara Exp $");
 
 #define _INTR_PRIVATE
 
@@ -64,12 +64,14 @@ __KERNEL_RCSID(0, "$NetBSD: omap2_gpio.c,v 1.19 2016/10/15 15:11:56 kiyohara Exp
 #include <dev/gpio/gpiovar.h>
 #endif
 
+#ifdef TI_AM335X
 static const struct omap_module gpio_module[] = {
 	{ 0, 0 },
 	{ AM335X_PRCM_CM_PER, CM_PER_GPIO1_CLKCTRL },
 	{ AM335X_PRCM_CM_PER, CM_PER_GPIO2_CLKCTRL },
 	{ AM335X_PRCM_CM_PER, CM_PER_GPIO3_CLKCTRL },
 };
+#endif
 
 static void gpio_pic_block_irqs(struct pic_softc *, size_t, uint32_t);
 static void gpio_pic_block_irqs2(struct pic_softc *, size_t, uint32_t);
@@ -488,9 +490,6 @@ gpio_attach(device_t parent, device_t self, void *aux)
 	int error;
 
 	gpio->gpio_dev = self;
-
-	if (oa->obio_intr == OBIOCF_INTR_DEFAULT)
-		panic("\n%s: no intr assigned", device_xname(self));
 
 	if (oa->obio_size == OBIOCF_SIZE_DEFAULT)
 		panic("\n%s: no size assigned", device_xname(self));

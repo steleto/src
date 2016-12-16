@@ -1,4 +1,4 @@
-/*	$NetBSD: if_arp.c,v 1.230 2016/10/11 13:59:30 roy Exp $	*/
+/*	$NetBSD: if_arp.c,v 1.233 2016/12/12 03:55:57 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
@@ -68,11 +68,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.230 2016/10/11 13:59:30 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.233 2016/12/12 03:55:57 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
 #include "opt_inet.h"
+#include "opt_net_mpsafe.h"
 #endif
 
 #ifdef INET
@@ -893,7 +894,7 @@ notfound:
 			arprequest(ifp,
 			    &satocsin(_rt->rt_ifa->ifa_addr)->sin_addr,
 			    &satocsin(dst)->sin_addr, enaddr);
-			rtfree(_rt);
+			rt_unref(_rt);
 		}
 		return error;
 	}
@@ -918,8 +919,10 @@ arpintr(void)
 	int s;
 	int arplen;
 
+#ifndef NET_MPSAFE
 	mutex_enter(softnet_lock);
 	KERNEL_LOCK(1, NULL);
+#endif
 	for (;;) {
 		struct ifnet *rcvif;
 
@@ -971,8 +974,12 @@ badlen:
 		m_freem(m);
 	}
 out:
+#ifndef NET_MPSAFE
 	KERNEL_UNLOCK_ONE(NULL);
 	mutex_exit(softnet_lock);
+#else
+	return; /* XXX gcc */
+#endif
 }
 
 /*
@@ -1130,8 +1137,15 @@ in_arpinput(struct mbuf *m)
 	else if (in_hosteq(isaddr, myaddr))
 		ARP_STATINC(ARP_STAT_RCVLOCALSPA);
 
-	if (in_nullhost(itaddr))
+	/*
+	 * If the target IP address is zero, ignore the packet.
+	 * This prevents the code below from tring to answer
+	 * when we are using IP address zero (booting).
+	 */
+	if (in_nullhost(itaddr)) {
 		ARP_STATINC(ARP_STAT_RCVZEROTPA);
+		goto out;
+	}
 
 	/* DAD check, RFC 5227 */
 	if (in_hosteq(isaddr, myaddr) ||
@@ -1141,14 +1155,6 @@ in_arpinput(struct mbuf *m)
 		    lla_snprintf(ar_sha(ah), ah->ar_hln));
 		goto out;
 	}
-
-	/*
-	 * If the target IP address is zero, ignore the packet.
-	 * This prevents the code below from tring to answer
-	 * when we are using IP address zero (booting).
-	 */
-	if (in_nullhost(itaddr))
-		goto out;
 
 	if (in_nullhost(isaddr))
 		goto reply;
@@ -1532,7 +1538,11 @@ static void
 arp_dad_stoptimer(struct dadq *dp)
 {
 
+#ifdef NET_MPSAFE
+	callout_halt(&dp->dad_timer_ch, NULL);
+#else
 	callout_halt(&dp->dad_timer_ch, softnet_lock);
+#endif
 }
 
 static void

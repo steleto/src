@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1368 2016/10/14 16:09:43 spz Exp $
+#	$NetBSD: 3RDPARTY,v 1.1383 2016/11/29 09:04:18 wiz Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -40,8 +40,8 @@
 #
 
 Package:	acpica
-Version:	20160527
-Current Vers:	20160527
+Version:	20160930
+Current Vers:	20160930
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
@@ -114,8 +114,8 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.10.4-P3/BSD	9.11.0/MPL
-Current Vers:	9.10.4-P3/BSD
+Version:	9.10.4-P4/BSD	9.11.0-P1/MPL
+Current Vers:	9.10.4-P4/BSD
 Maintainer:	Paul Vixie <vixie@vix.com>
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
@@ -171,7 +171,7 @@ Todo[4]: Re-entrant functions of net/*
 Todo[5]: Reconcile the doc directory.
 
 Package:	binutils
-Version:	2.23.2
+Version:	2.27
 Current Vers:	2.27
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/binutils/
@@ -942,8 +942,8 @@ and ndbootd-raw.c.  Restore saved config.h, and force it to define
 HAVE_STRICT_ALIGNMENT.  Fix RCS IDs, import.
 
 Package:	ntp
-Version:	4.2.8p8
-Current Vers:	4.2.8p8
+Version:	4.2.8p9
+Current Vers:	4.2.8p9
 Maintainer:	David L. Mills <mills@udel.edu>
 Archive Site:	http://www.ntp.org/
 Home Page:	http://www.ntp.org/, http://support.ntp.org/
@@ -1211,8 +1211,8 @@ Notes:
 Old versions are available from Purdue (ftp.cs.purdue.edu:/pub/RCS).
 
 Package:	root.cache
-Version:	2016082500 (August 25, 2016)
-Current Vers:	2016082500 (August 25, 2016)
+Version:	2016102001 (October 20, 2016)
+Current Vers:	2016102001 (October 20, 2016)
 Maintainer:	InterNIC
 Archive Site:	ftp://ftp.internic.net/domain/named.root
 Home Page:	ftp://ftp.internic.net/domain/named.root
@@ -1272,7 +1272,7 @@ original.
 
 Package:	sqlite
 Version:	3.13.0
-Current Vers:	3.13.0
+Current Vers:	3.15.2
 Maintainer:	Richard Hipp <drh@sqlite.org>
 Home Page:	http://www.sqlite.org
 Responsible:	joerg
@@ -1398,15 +1398,15 @@ Notes:
 Added changes from a5 -> a12 manually.
 
 Package:	tz
-Version:	tzcode2016g / tzdata2016g
-Current Vers:	tzcode2016g / tzdata2016g
+Version:	tzcode2016i / tzdata2016j
+Current Vers:	tzcode2016j / tzdata2016j
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/
 Old Archive Site:	ftp://elsie.nci.nih.gov/pub/
 Home Page:	http://www.iana.org/time-zones
 Mailing List:	tz@iana.org
-Responsible:	kleink, christos, apb
+Responsible:	kleink, christos, kre
 License:	Public domain
 Location:	lib/libc/time/zoneinfo, external/public-domain/tz/share
 Notes:
@@ -1417,11 +1417,11 @@ is too much inertia to apply them. Check for .gitignore files.
 For the data files, do use external/public-domain/tz/tzdata2netbsd.
 
 Package:	wpa_supplicant/hostapd
-Version:	2.4
-Current Vers:	2.4
+Version:	2.6
+Current Vers:	2.6
 Maintainer:	Jouni Malinen <jkmaline@cc.hut.fi>
-Archive Site:	http://hostap.epitest.fi/releases/
-Home Page:	http://hostap.epitest.fi/wpa_supplicant/
+Archive Site:	http://w1.fi/releases/
+Home Page:	http://w1.fi/wpa_supplicant/
 Mailing List:
 Responsible:	scw, dyoung, christos
 License:	BSD or GPLv2

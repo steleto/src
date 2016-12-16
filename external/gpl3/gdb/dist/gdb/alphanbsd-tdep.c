@@ -333,6 +333,7 @@ alphanbsd_init_abi (struct gdbarch_info info,
   /* NetBSD/alpha has SVR4-style shared libraries.  */
   set_solib_svr4_fetch_link_map_offsets
     (gdbarch, svr4_lp64_fetch_link_map_offsets);
+  set_gdbarch_skip_solib_resolver (gdbarch, nbsd_skip_solib_resolver);
 
 #ifdef notyet
   tdep->dynamic_sigtramp_offset = alphanbsd_sigtramp_offset;

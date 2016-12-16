@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.230 2016/08/27 16:17:16 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.238 2016/12/15 12:04:17 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -111,7 +111,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.230 2016/08/27 16:17:16 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.238 2016/12/15 12:04:17 kamil Exp $");
 
 /* #define XENDEBUG_LOW  */
 
@@ -207,6 +207,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.230 2016/08/27 16:17:16 maxv Exp $");
 #include <dev/acpi/acpivar.h>
 #define ACPI_MACHDEP_PRIVATE
 #include <machine/acpi_machdep.h>
+#else
+#include <machine/i82489var.h>
 #endif
 
 #include "isa.h"
@@ -377,12 +379,14 @@ cpu_startup(void)
 	/*
 	 * Create the module map.
 	 *
-	 * XXX: the module map is taken as what is left of the bootstrap memory
-	 * created in locore.S, which is not big enough if we want to load many
-	 * modules dynamically. We really should be using kernel_map instead.
+	 * The kernel uses RIP-relative addressing with a maximum offset of
+	 * 2GB. The problem is, kernel_map is too far away in memory from
+	 * the kernel .text. So we cannot use it, and have to create a
+	 * special module_map.
 	 *
-	 * But the modules must be located above the kernel image, and that
-	 * wouldn't be guaranteed if we were using kernel_map.
+	 * The module map is taken as what is left of the bootstrap memory
+	 * created in locore.S. This memory is right above the kernel
+	 * image, so this is the best place to put our modules.
 	 */
 	uvm_map_setup(&module_map_store, module_start, module_end, 0);
 	module_map_store.pmap = pmap_kernel();
@@ -478,6 +482,7 @@ x86_64_proc0_tss_ldt_init(void)
 	pmap_kernel()->pm_ldt_sel = GSYSSEL(GLDT_SEL, SEL_KPL);
 	pcb->pcb_cr0 = rcr0() & ~CR0_TS;
 	l->l_md.md_regs = (struct trapframe *)pcb->pcb_rsp0 - 1;
+	memset(l->l_md.md_watchpoint, 0, sizeof(*l->l_md.md_watchpoint));
 
 #if !defined(XEN)
 	lldt(pmap_kernel()->pm_ldt_sel);
@@ -1312,6 +1317,8 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 
 	l->l_proc->p_flag &= ~PK_32;
 
+	memset(l->l_md.md_watchpoint, 0, sizeof(*l->l_md.md_watchpoint));
+
 	tf = l->l_md.md_regs;
 	tf->tf_ds = LSEL(LUDATA_SEL, SEL_UPL);
 	tf->tf_es = LSEL(LUDATA_SEL, SEL_UPL);
@@ -1535,12 +1542,15 @@ void
 init_x86_64(paddr_t first_avail)
 {
 	extern void consinit(void);
+	extern paddr_t local_apic_pa;
 	struct region_descriptor region;
 	struct mem_segment_descriptor *ldt_segp;
 	int x;
 #ifndef XEN
 	int ist;
-#endif /* !XEN */
+#endif
+
+	KASSERT(first_avail % PAGE_SIZE == 0);
 
 #ifdef XEN
 	KASSERT(HYPERVISOR_shared_info != NULL);
@@ -1603,6 +1613,15 @@ init_x86_64(paddr_t first_avail)
 	    pmap_pa_start, avail_start, avail_end));
 #endif	/* !XEN */
 
+	/* End of the virtual space we have created so far. */
+	kern_end = (vaddr_t)atdevbase + IOM_SIZE;
+
+#ifndef XEN
+	/* The area for the module map. */
+	module_start = kern_end;
+	module_end = KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2;
+#endif
+
 	/*
 	 * Call pmap initialization to make new kernel address space.
 	 * We must do this before loading pages into the VM system.
@@ -1613,7 +1632,6 @@ init_x86_64(paddr_t first_avail)
 	/* Internalize the physical pages into the VM system. */
 	init_x86_vm(first_avail);
 #else	/* XEN */
-	kern_end = KERNBASE + first_avail;
 	physmem = xen_start_info.nr_pages;
 
 	uvm_page_physload(atop(avail_start),
@@ -1626,6 +1644,11 @@ init_x86_64(paddr_t first_avail)
 	pmap_growkernel(VM_MIN_KERNEL_ADDRESS + 32 * 1024 * 1024);
 
 	kpreempt_disable();
+
+	pmap_kenter_pa(local_apic_va, local_apic_pa,
+	    VM_PROT_READ|VM_PROT_WRITE, 0);
+	pmap_update(pmap_kernel());
+	memset((void *)local_apic_va, 0, PAGE_SIZE);
 
 	pmap_kenter_pa(idt_vaddr, idt_paddr, VM_PROT_READ|VM_PROT_WRITE, 0);
 	pmap_kenter_pa(gdt_vaddr, gdt_paddr, VM_PROT_READ|VM_PROT_WRITE, 0);

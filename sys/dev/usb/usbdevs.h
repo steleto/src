@@ -1,10 +1,10 @@
-/*	$NetBSD: usbdevs.h,v 1.712 2016/10/17 20:00:25 nat Exp $	*/
+/*	$NetBSD: usbdevs.h,v 1.719 2016/12/12 16:43:14 bouyer Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	NetBSD: usbdevs,v 1.720 2016/10/17 19:58:42 nat Exp
+ *	NetBSD: usbdevs,v 1.728 2016/12/12 16:41:08 bouyer Exp
  */
 
 /*
@@ -656,6 +656,7 @@
 #define	USB_PRODUCT_ABOCOM_UFE2000	0x420a		/* UFE2000 USB2.0 Fast Ethernet Adapter */
 #define	USB_PRODUCT_ABOCOM_WL54	0x6001		/* WL54 */
 #define	USB_PRODUCT_ABOCOM_RTL8192CU	0x8178		/* RTL8192CU */
+#define	USB_PRODUCT_ABOCOM_RTL8188EU	0x8179		/* RTL8188EU */
 #define	USB_PRODUCT_ABOCOM_RTL8188CU_1	0x8188		/* RTL8188CU */
 #define	USB_PRODUCT_ABOCOM_RTL8188CU_2	0x8189		/* RTL8188CU */
 #define	USB_PRODUCT_ABOCOM_XX10	0xabc1		/* XX10 */
@@ -1796,7 +1797,10 @@
 #define	USB_PRODUCT_HUAWEI_E1820	0x14ac		/* Huawei E1820 */
 #define	USB_PRODUCT_HUAWEI_E171INIT	0x14fe		/* Huawei E171 USB CD */
 #define	USB_PRODUCT_HUAWEI_E171	0x1506		/* Huawei E171 */
-#define	USB_PRODUCT_HUAWEI_E353	0x1507		/* Huawei E353 */
+#define	USB_PRODUCT_HUAWEI_E353_HiLink	0x1507		/* Huawei E353_HiLink */
+/* Accessing http://192.168.1.1/html/switchProjectMode.html on
+   a Huawei HiLink device will switch it to u3g mode */
+#define	USB_PRODUCT_HUAWEI_E353	0x1442		/* Huawei E353 */
 #define	USB_PRODUCT_HUAWEI_K3765INIT	0x1520		/* Huawei K3765 USB CD */
 #define	USB_PRODUCT_HUAWEI_E353INIT	0x1f01		/* Huawei E353 USB CD */
 
@@ -1859,6 +1863,7 @@
 
 #define	USB_PRODUCT_INTEL2_RMH	0x0020		/* Rate Matching Hub */
 #define	USB_PRODUCT_INTEL2_RMH2	0x0024		/* Rate Matching Hub */
+#define	USB_PRODUCT_INTEL2_N_6235_BT	0x07da		/* Advanced-N 6235 Combo Bluetooth */
 
 /* Intersil products */
 #define	USB_PRODUCT_INTERSIL_PRISM_GT	0x1000		/* PrismGT USB 2.0 WLAN */
@@ -2031,6 +2036,7 @@
 /* Linksys products */
 #define	USB_PRODUCT_LINKSYS_MAUSB2	0x0105		/* Camedia MAUSB-2 */
 #define	USB_PRODUCT_LINKSYS_USB10TX1	0x200c		/* USB10TX */
+#define	USB_PRODUCT_LINKSYS_HG20F9	0x20f9		/* HG20F9 Ethernet */
 #define	USB_PRODUCT_LINKSYS_USB10T	0x2202		/* USB10T Ethernet */
 #define	USB_PRODUCT_LINKSYS_USB100TX	0x2203		/* USB100TX Ethernet */
 #define	USB_PRODUCT_LINKSYS_USB100H1	0x2204		/* USB100H1 Ethernet/HPNA */
@@ -3032,6 +3038,7 @@
 #define	USB_PRODUCT_SITECOMEU_WL349V4	0x0050		/* WL-349 v4 */
 #define	USB_PRODUCT_SITECOMEU_RT3070_1	0x0051		/* RT3070 */
 #define	USB_PRODUCT_SITECOMEU_RTL8188CU	0x0052		/* RTL8188CU */
+#define	USB_PRODUCT_SITECOMEU_LN031	0x0056		/* LN-031 */
 #define	USB_PRODUCT_SITECOMEU_RTL8188CU_2	0x005c		/* RTL8188CU */
 #define	USB_PRODUCT_SITECOMEU_RT3072_5	0x005f		/* RT3072 */
 #define	USB_PRODUCT_SITECOMEU_WLA4000	0x0060		/* WLA-4000 */
@@ -3334,6 +3341,7 @@
 #define	USB_PRODUCT_VALIDITY_VFS300	0x0008		/* VFS300 Fingerprint Reader */
 #define	USB_PRODUCT_VALIDITY_VFS5011	0x0011		/* VFS5011 Fingerprint Reader */
 #define	USB_PRODUCT_VALIDITY_VFS471	0x003c		/* VFS471 Fingerprint Reader */
+#define	USB_PRODUCT_VALIDITY_VFS491	0x003d		/* VFS491 Fingerprint Reader */
 
 /* VidzMedia products */
 #define	USB_PRODUCT_VIDZMEDIA_MONSTERTV	0x4fb1		/* MonsterTV P2H */
@@ -3383,7 +3391,8 @@
 
 /* WinChipHead products */
 #define	USB_PRODUCT_WINCHIPHEAD_CH341SER	0x5523		/* CH341/CH340 USB-Serial Bridge */
-#define	USB_PRODUCT_WINCHIPHEAD2_CH341	0x7523		/* CH341 serial/parallel */
+#define	USB_PRODUCT_WINCHIPHEAD2_CH341	0x7523		/* CH341 USB-Serial Bridge */
+#define	USB_PRODUCT_WINCHIPHEAD2_CH341_2	0x5523		/* CH341 USB-Serial Bridge */
 
 /* Wistron NeWeb products */
 #define	USB_PRODUCT_WISTRONNEWEB_WNC0600	0x0326		/* WNC-0600USB */
