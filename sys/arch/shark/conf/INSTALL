@@ -1,4 +1,4 @@
-#	$NetBSD: INSTALL,v 1.58 2015/08/21 01:52:08 uebayasi Exp $
+#	$NetBSD: INSTALL,v 1.61 2016/12/13 20:42:20 christos Exp $
 #
 #	Shark installation kernel
 #
@@ -234,6 +234,8 @@ scr*		at ofisascr?
 #audio*		at ess?
 #opl*		at ess?
 #midi*		at opl?
+
+#spkr*		at audio?		# PC speaker (synthesized)
 
 # Joystick @OFW
 #joy*		at ofisa?

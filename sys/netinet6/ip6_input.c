@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_input.c,v 1.168 2016/09/07 15:41:44 roy Exp $	*/
+/*	$NetBSD: ip6_input.c,v 1.171 2016/12/08 05:16:34 ozaki-r Exp $	*/
 /*	$KAME: ip6_input.c,v 1.188 2001/03/29 05:34:31 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.168 2016/09/07 15:41:44 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.171 2016/12/08 05:16:34 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -70,6 +70,7 @@ __KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.168 2016/09/07 15:41:44 roy Exp $");
 #include "opt_inet6.h"
 #include "opt_ipsec.h"
 #include "opt_compat_netbsd.h"
+#include "opt_net_mpsafe.h"
 #endif
 
 #include <sys/param.h>
@@ -155,6 +156,14 @@ static int ip6_process_hopopts(struct mbuf *, u_int8_t *, int, u_int32_t *,
 static struct mbuf *ip6_pullexthdr(struct mbuf *, size_t, int);
 static void sysctl_net_inet6_ip6_setup(struct sysctllog **);
 
+#ifdef NET_MPSAFE
+#define	SOFTNET_LOCK()		mutex_enter(softnet_lock)
+#define	SOFTNET_UNLOCK()	mutex_exit(softnet_lock)
+#else
+#define	SOFTNET_LOCK()		KASSERT(mutex_owned(softnet_lock))
+#define	SOFTNET_UNLOCK()	KASSERT(mutex_owned(softnet_lock))
+#endif
+
 /*
  * IP6 initialization: fill in IP6 protocol switch table.
  * All protocols not implemented in kernel go to raw IP6 protocol handler.
@@ -223,7 +232,9 @@ ip6intr(void *arg __unused)
 {
 	struct mbuf *m;
 
+#ifndef NET_MPSAFE
 	mutex_enter(softnet_lock);
+#endif
 	while ((m = pktq_dequeue(ip6_pktq)) != NULL) {
 		struct psref psref;
 		struct ifnet *rcvif = m_get_rcvif_psref(m, &psref);
@@ -243,7 +254,9 @@ ip6intr(void *arg __unused)
 		ip6_input(m, rcvif);
 		m_put_rcvif_psref(rcvif, &psref);
 	}
+#ifndef NET_MPSAFE
 	mutex_exit(softnet_lock);
+#endif
 }
 
 void
@@ -256,7 +269,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	int nxt, ours = 0, rh_present = 0;
 	struct ifnet *deliverifp = NULL;
 	int srcrt = 0;
-	const struct rtentry *rt;
+	struct rtentry *rt = NULL;
 	union {
 		struct sockaddr		dst;
 		struct sockaddr_in6	dst6;
@@ -360,9 +373,14 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	IP6_STATINC(IP6_STAT_NXTHIST + ip6->ip6_nxt);
 
 #ifdef ALTQ
-	if (altq_input != NULL && (*altq_input)(m, AF_INET6) == 0) {
-		/* packet is dropped by traffic conditioner */
-		return;
+	if (altq_input != NULL) {
+		SOFTNET_LOCK();
+		if ((*altq_input)(m, AF_INET6) == 0) {
+			SOFTNET_UNLOCK();
+			/* packet is dropped by traffic conditioner */
+			return;
+		}
+		SOFTNET_UNLOCK();
 	}
 #endif
 
@@ -436,6 +454,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 		goto bad;
 	}
 
+	ro = percpu_getref(ip6_forward_rt_percpu);
 	/*
 	 * Multicast check
 	 */
@@ -456,7 +475,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 			ip6s[IP6_STAT_CANTFORWARD]++;
 			IP6_STAT_PUTREF();
 			in6_ifstat_inc(rcvif, ifs6_in_discard);
-			goto bad;
+			goto bad_unref;
 		}
 		deliverifp = rcvif;
 		goto hbhcheck;
@@ -467,9 +486,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	/*
 	 *  Unicast check
 	 */
-	ro = percpu_getref(ip6_forward_rt_percpu);
 	rt = rtcache_lookup2(ro, &u.dst, 1, &hit);
-	percpu_putref(ip6_forward_rt_percpu);
 	if (hit)
 		IP6_STATINC(IP6_STAT_FORWARD_CACHEHIT);
 	else
@@ -515,7 +532,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 			    ip6_sprintf(&ip6->ip6_src),
 			    ip6_sprintf(&ip6->ip6_dst));
 
-			goto bad;
+			goto bad_unref;
 		}
 	}
 
@@ -561,7 +578,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	if (!ip6_forwarding) {
 		IP6_STATINC(IP6_STAT_CANTFORWARD);
 		in6_ifstat_inc(rcvif, ifs6_in_discard);
-		goto bad;
+		goto bad_unref;
 	}
 
   hbhcheck:
@@ -600,6 +617,8 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 #if 0	/*touches NULL pointer*/
 			in6_ifstat_inc(rcvif, ifs6_in_discard);
 #endif
+			rtcache_unref(rt, ro);
+			percpu_putref(ip6_forward_rt_percpu);
 			return;	/* m have already been freed */
 		}
 
@@ -623,12 +642,16 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 			icmp6_error(m, ICMP6_PARAM_PROB,
 				    ICMP6_PARAMPROB_HEADER,
 				    (char *)&ip6->ip6_plen - (char *)ip6);
+			rtcache_unref(rt, ro);
+			percpu_putref(ip6_forward_rt_percpu);
 			return;
 		}
 		IP6_EXTHDR_GET(hbh, struct ip6_hbh *, m, sizeof(struct ip6_hdr),
 			sizeof(struct ip6_hbh));
 		if (hbh == NULL) {
 			IP6_STATINC(IP6_STAT_TOOSHORT);
+			rtcache_unref(rt, ro);
+			percpu_putref(ip6_forward_rt_percpu);
 			return;
 		}
 		KASSERT(IP6_HDR_ALIGNED_P(hbh));
@@ -652,7 +675,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	if (m->m_pkthdr.len - sizeof(struct ip6_hdr) < plen) {
 		IP6_STATINC(IP6_STAT_TOOSHORT);
 		in6_ifstat_inc(rcvif, ifs6_in_truncated);
-		goto bad;
+		goto bad_unref;
 	}
 	if (m->m_pkthdr.len > sizeof(struct ip6_hdr) + plen) {
 		if (m->m_len == m->m_pkthdr.len) {
@@ -674,16 +697,25 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 		 * ip6_mforward() returns a non-zero value, the packet
 		 * must be discarded, else it may be accepted below.
 		 */
-		if (ip6_mrouter && ip6_mforward(ip6, rcvif, m)) {
-			IP6_STATINC(IP6_STAT_CANTFORWARD);
-			m_freem(m);
-			return;
+		if (ip6_mrouter != NULL) {
+			int error;
+
+			SOFTNET_LOCK();
+			error = ip6_mforward(ip6, rcvif, m);
+			SOFTNET_UNLOCK();
+
+			if (error != 0) {
+				rtcache_unref(rt, ro);
+				percpu_putref(ip6_forward_rt_percpu);
+				IP6_STATINC(IP6_STAT_CANTFORWARD);
+				goto bad;
+			}
 		}
-		if (!ours) {
-			m_freem(m);
-			return;
-		}
+		if (!ours)
+			goto bad_unref;
 	} else if (!ours) {
+		rtcache_unref(rt, ro);
+		percpu_putref(ip6_forward_rt_percpu);
 		ip6_forward(m, srcrt);
 		return;
 	}
@@ -703,7 +735,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	    IN6_IS_ADDR_V4MAPPED(&ip6->ip6_dst)) {
 		IP6_STATINC(IP6_STAT_BADSCOPE);
 		in6_ifstat_inc(rcvif, ifs6_in_addrerr);
-		goto bad;
+		goto bad_unref;
 	}
 
 	/*
@@ -722,6 +754,12 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	IP6_STATINC(IP6_STAT_DELIVERED);
 	in6_ifstat_inc(deliverifp, ifs6_in_deliver);
 	nest = 0;
+
+	if (rt != NULL) {
+		rtcache_unref(rt, ro);
+		rt = NULL;
+	}
+	percpu_putref(ip6_forward_rt_percpu);
 
 	rh_present = 0;
 	while (nxt != IPPROTO_DONE) {
@@ -758,18 +796,29 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 			 */
 			if ((inet6sw[ip_protox[nxt]].pr_flags
 			    & PR_LASTHDR) != 0) {
-				int error = ipsec6_input(m);
+				int error;
+
+				SOFTNET_LOCK();
+				error = ipsec6_input(m);
+				SOFTNET_UNLOCK();
 				if (error)
 					goto bad;
 			}
 		}
 #endif /* IPSEC */
 
+		SOFTNET_LOCK();
 		nxt = (*inet6sw[ip6_protox[nxt]].pr_input)(&m, &off, nxt);
+		SOFTNET_UNLOCK();
 	}
 	return;
+
+ bad_unref:
+	rtcache_unref(rt, ro);
+	percpu_putref(ip6_forward_rt_percpu);
  bad:
 	m_freem(m);
+	return;
 }
 
 /*

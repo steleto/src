@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_input.c,v 1.341 2016/09/07 15:41:44 roy Exp $	*/
+/*	$NetBSD: ip_input.c,v 1.347 2016/12/12 03:55:57 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_input.c,v 1.341 2016/09/07 15:41:44 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_input.c,v 1.347 2016/12/12 03:55:57 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -101,6 +101,7 @@ __KERNEL_RCSID(0, "$NetBSD: ip_input.c,v 1.341 2016/09/07 15:41:44 roy Exp $");
 #include "opt_mrouting.h"
 #include "opt_mbuftrace.h"
 #include "opt_inet_csum.h"
+#include "opt_net_mpsafe.h"
 #endif
 
 #include "arp.h"
@@ -286,7 +287,7 @@ static void		ipintr(void *);
 static void		ip_input(struct mbuf *);
 static void		ip_forward(struct mbuf *, int, struct ifnet *);
 static bool		ip_dooptions(struct mbuf *);
-static struct in_ifaddr *ip_rtaddr(struct in_addr);
+static struct in_ifaddr *ip_rtaddr(struct in_addr, struct psref *);
 static void		sysctl_net_inet_ip_setup(struct sysctllog **);
 
 static struct in_ifaddr	*ip_match_our_address(struct ifnet *, struct ip *,
@@ -294,9 +295,13 @@ static struct in_ifaddr	*ip_match_our_address(struct ifnet *, struct ip *,
 static struct in_ifaddr	*ip_match_our_address_broadcast(struct ifnet *,
 			    struct ip *);
 
-/* XXX: Not yet enabled. */
+#ifdef NET_MPSAFE
+#define	SOFTNET_LOCK()		mutex_enter(softnet_lock)
+#define	SOFTNET_UNLOCK()	mutex_exit(softnet_lock)
+#else
 #define	SOFTNET_LOCK()		KASSERT(mutex_owned(softnet_lock))
 #define	SOFTNET_UNLOCK()	KASSERT(mutex_owned(softnet_lock))
+#endif
 
 /*
  * IP initialization: fill in IP protocol switch table.
@@ -330,7 +335,6 @@ ip_init(void)
 	ip_ids = ip_id_init();
 	ip_id = time_uptime & 0xfffff;
 
-	ip_mtudisc_timeout_q = rt_timer_queue_create(ip_mtudisc_timeout);
 #ifdef GATEWAY
 	ipflow_init();
 #endif
@@ -437,11 +441,15 @@ ipintr(void *arg __unused)
 
 	KASSERT(cpu_softintr_p());
 
+#ifndef NET_MPSAFE
 	mutex_enter(softnet_lock);
+#endif
 	while ((m = pktq_dequeue(ip_pktq)) != NULL) {
 		ip_input(m);
 	}
+#ifndef NET_MPSAFE
 	mutex_exit(softnet_lock);
+#endif
 }
 
 /*
@@ -614,10 +622,9 @@ ip_input(struct mbuf *m)
 		struct in_addr odst = ip->ip_dst;
 		bool freed;
 
-		SOFTNET_LOCK();
 		freed = pfil_run_hooks(inet_pfil_hook, &m, ifp, PFIL_IN) != 0;
-		SOFTNET_UNLOCK();
 		if (freed || m == NULL) {
+			m = NULL;
 			goto out;
 		}
 		ip = mtod(m, struct ip *);
@@ -647,6 +654,7 @@ ip_input(struct mbuf *m)
 		if ((*altq_input)(m, AF_INET) == 0) {
 			/* Packet dropped by traffic conditioner. */
 			SOFTNET_UNLOCK();
+			m = NULL;
 			goto out;
 		}
 		SOFTNET_UNLOCK();
@@ -660,8 +668,10 @@ ip_input(struct mbuf *m)
 	 * to be sent and the original packet to be freed).
 	 */
 	ip_nhops = 0;		/* for source routed packets */
-	if (hlen > sizeof (struct ip) && ip_dooptions(m))
+	if (hlen > sizeof (struct ip) && ip_dooptions(m)) {
+		m = NULL;
 		goto out;
+	}
 
 	/*
 	 * Check our list of addresses, to see if the packet is for us.
@@ -829,7 +839,7 @@ ours:
 		 * is expensive, so explore ia here again.
 		 */
 		s = pserialize_read_enter();
-		_ia = in_get_ia(ip->ip_dst.s_addr);
+		_ia = in_get_ia(ip->ip_dst);
 		_ia->ia_ifa.ifa_data.ifad_inbytes += ntohs(ip->ip_len);
 		pserialize_read_exit(s);
 	}
@@ -932,7 +942,8 @@ ip_dooptions(struct mbuf *m)
 		 * address is on directly accessible net.
 		 */
 		case IPOPT_LSRR:
-		case IPOPT_SSRR:
+		case IPOPT_SSRR: {
+			struct psref psref;
 			if (ip_allowsrcrt == 0) {
 				type = ICMP_UNREACH;
 				code = ICMP_UNREACH_NET_PROHIB;
@@ -978,34 +989,35 @@ ip_dooptions(struct mbuf *m)
 			 */
 			memcpy((void *)&ipaddr.sin_addr, (void *)(cp + off),
 			    sizeof(ipaddr.sin_addr));
-			s = pserialize_read_enter();
 			if (opt == IPOPT_SSRR) {
-				ifa = ifa_ifwithladdr(sintosa(&ipaddr));
+				ifa = ifa_ifwithladdr_psref(sintosa(&ipaddr),
+				    &psref);
 				if (ifa != NULL)
 					ia = ifatoia(ifa);
 				else
 					ia = NULL;
 			} else {
-				ia = ip_rtaddr(ipaddr.sin_addr);
+				ia = ip_rtaddr(ipaddr.sin_addr, &psref);
 			}
 			if (ia == NULL) {
 				type = ICMP_UNREACH;
 				code = ICMP_UNREACH_SRCFAIL;
-				pserialize_read_exit(s);
 				goto bad;
 			}
 			ip->ip_dst = ipaddr.sin_addr;
 			bcopy((void *)&ia->ia_addr.sin_addr,
 			    (void *)(cp + off), sizeof(struct in_addr));
-			pserialize_read_exit(s);
+			ia4_release(ia, &psref);
 			cp[IPOPT_OFFSET] += sizeof(struct in_addr);
 			/*
 			 * Let ip_intr's mcast routing check handle mcast pkts
 			 */
 			forward = !IN_MULTICAST(ip->ip_dst.s_addr);
 			break;
+		    }
 
-		case IPOPT_RR:
+		case IPOPT_RR: {
+			struct psref psref;
 			if (optlen < IPOPT_OFFSET + sizeof(*cp)) {
 				code = &cp[IPOPT_OLEN] - (u_char *)ip;
 				goto bad;
@@ -1026,12 +1038,10 @@ ip_dooptions(struct mbuf *m)
 			 * locate outgoing interface; if we're the destination,
 			 * use the incoming interface (should be same).
 			 */
-			s = pserialize_read_enter();
-			ifa = ifa_ifwithaddr(sintosa(&ipaddr));
+			ifa = ifa_ifwithaddr_psref(sintosa(&ipaddr), &psref);
 			if (ifa == NULL) {
-				ia = ip_rtaddr(ipaddr.sin_addr);
+				ia = ip_rtaddr(ipaddr.sin_addr, &psref);
 				if (ia == NULL) {
-					pserialize_read_exit(s);
 					type = ICMP_UNREACH;
 					code = ICMP_UNREACH_HOST;
 					goto bad;
@@ -1041,9 +1051,10 @@ ip_dooptions(struct mbuf *m)
 			}
 			bcopy((void *)&ia->ia_addr.sin_addr,
 			    (void *)(cp + off), sizeof(struct in_addr));
-			pserialize_read_exit(s);
+			ia4_release(ia, &psref);
 			cp[IPOPT_OFFSET] += sizeof(struct in_addr);
 			break;
+		    }
 
 		case IPOPT_TS:
 			code = cp - (u_char *)ip;
@@ -1161,7 +1172,7 @@ bad:
  * return internet address info of interface to be used to get there.
  */
 static struct in_ifaddr *
-ip_rtaddr(struct in_addr dst)
+ip_rtaddr(struct in_addr dst, struct psref *psref)
 {
 	struct rtentry *rt;
 	union {
@@ -1172,13 +1183,16 @@ ip_rtaddr(struct in_addr dst)
 
 	sockaddr_in_init(&u.dst4, &dst, 0);
 
-	SOFTNET_LOCK();
 	ro = percpu_getref(ipforward_rt_percpu);
 	rt = rtcache_lookup(ro, &u.dst);
-	percpu_putref(ipforward_rt_percpu);
-	SOFTNET_UNLOCK();
-	if (rt == NULL)
+	if (rt == NULL) {
+		percpu_putref(ipforward_rt_percpu);
 		return NULL;
+	}
+
+	ia4_acquire(ifatoia(rt->rt_ifa), psref);
+	rtcache_unref(rt, ro);
+	percpu_putref(ipforward_rt_percpu);
 
 	return ifatoia(rt->rt_ifa);
 }
@@ -1330,21 +1344,18 @@ ip_forward(struct mbuf *m, int srcrt, struct ifnet *rcvif)
 		return;
 	}
 
-	SOFTNET_LOCK();
-
 	if (ip->ip_ttl <= IPTTLDEC) {
 		icmp_error(m, ICMP_TIMXCEED, ICMP_TIMXCEED_INTRANS, dest, 0);
-		SOFTNET_UNLOCK();
 		return;
 	}
 
 	sockaddr_in_init(&u.dst4, &ip->ip_dst, 0);
 
 	ro = percpu_getref(ipforward_rt_percpu);
-	if ((rt = rtcache_lookup(ro, &u.dst)) == NULL) {
+	rt = rtcache_lookup(ro, &u.dst);
+	if (rt == NULL) {
 		percpu_putref(ipforward_rt_percpu);
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_NET, dest, 0);
-		SOFTNET_UNLOCK();
 		return;
 	}
 
@@ -1386,6 +1397,7 @@ ip_forward(struct mbuf *m, int srcrt, struct ifnet *rcvif)
 			code = ICMP_REDIRECT_HOST;
 		}
 	}
+	rtcache_unref(rt, ro);
 
 	error = ip_output(m, NULL, ro,
 	    (IP_FORWARDING | (ip_directedbcast ? IP_ALLOWBROADCAST : 0)),
@@ -1415,14 +1427,12 @@ ip_forward(struct mbuf *m, int srcrt, struct ifnet *rcvif)
 	}
 
 	percpu_putref(ipforward_rt_percpu);
-	SOFTNET_UNLOCK();
 	return;
 
 redirect:
 error:
 	if (mcopy == NULL) {
 		percpu_putref(ipforward_rt_percpu);
-		SOFTNET_UNLOCK();
 		return;
 	}
 
@@ -1445,8 +1455,10 @@ error:
 		type = ICMP_UNREACH;
 		code = ICMP_UNREACH_NEEDFRAG;
 
-		if ((rt = rtcache_validate(ro)) != NULL)
+		if ((rt = rtcache_validate(ro)) != NULL) {
 			destmtu = rt->rt_ifp->if_mtu;
+			rtcache_unref(rt, ro);
+		}
 #ifdef IPSEC
 		if (ipsec_used)
 			(void)ipsec4_forward(mcopy, &destmtu);
@@ -1464,12 +1476,10 @@ error:
 		if (mcopy)
 			m_freem(mcopy);
 		percpu_putref(ipforward_rt_percpu);
-		SOFTNET_UNLOCK();
 		return;
 	}
 	icmp_error(mcopy, type, code, dest, destmtu);
 	percpu_putref(ipforward_rt_percpu);
-	SOFTNET_UNLOCK();
 }
 
 void

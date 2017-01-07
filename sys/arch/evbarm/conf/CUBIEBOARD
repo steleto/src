@@ -1,5 +1,5 @@
 #
-#	$NetBSD: CUBIEBOARD,v 1.46 2016/04/25 20:15:46 bouyer Exp $
+#	$NetBSD: CUBIEBOARD,v 1.49 2016/12/13 20:42:17 christos Exp $
 #
 #	CUBIEBOARD -- Allwinner A10/A20 Eval Board Kernel
 #
@@ -132,6 +132,8 @@ audio0		at awinac0
 awinhdmi0       at awinio0
 awinhdmiaudio0	at awinio0
 audio1		at awinhdmiaudio0
+
+spkr*		at audio?		# PC speaker (synthesized)
 
 # TCON
 awintcon0       at awinio0 port 0

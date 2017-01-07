@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.Xorg,v 1.18 2016/08/18 08:11:22 mrg Exp $
+#	$NetBSD: NetBSD.dist.Xorg,v 1.20 2016/11/22 19:51:37 snj Exp $
 ./usr/X11R7
 ./usr/X11R7/bin
 ./usr/X11R7/include
@@ -94,6 +94,7 @@
 ./usr/X11R7/lib/X11/locale/mulelao-1
 ./usr/X11R7/lib/X11/locale/nokhchi-1
 ./usr/X11R7/lib/X11/locale/pt_BR.UTF-8
+./usr/X11R7/lib/X11/locale/pt_PT.UTF-8
 ./usr/X11R7/lib/X11/locale/ru_RU.UTF-8
 ./usr/X11R7/lib/X11/locale/sr_CS.UTF-8
 ./usr/X11R7/lib/X11/locale/tatar-cyr
@@ -129,6 +130,7 @@
 ./usr/X11R7/lib/X11/xkb/symbols/digital_vndr
 ./usr/X11R7/lib/X11/xkb/symbols/fujitsu_vndr
 ./usr/X11R7/lib/X11/xkb/symbols/hp_vndr
+./usr/X11R7/lib/X11/xkb/symbols/jolla_vndr
 ./usr/X11R7/lib/X11/xkb/symbols/macintosh_vndr
 ./usr/X11R7/lib/X11/xkb/symbols/nec_vndr
 ./usr/X11R7/lib/X11/xkb/symbols/nokia_vndr

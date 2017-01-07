@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_flow.c,v 1.31 2016/08/23 09:59:20 knakahara Exp $	*/
+/*	$NetBSD: ip6_flow.c,v 1.33 2016/12/08 05:16:34 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -38,7 +38,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_flow.c,v 1.31 2016/08/23 09:59:20 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_flow.c,v 1.33 2016/12/08 05:16:34 ozaki-r Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_net_mpsafe.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -255,7 +259,7 @@ ip6flow_fastforward(struct mbuf **mp)
 {
 	struct ip6flow *ip6f;
 	struct ip6_hdr *ip6;
-	struct rtentry *rt;
+	struct rtentry *rt = NULL;
 	struct mbuf *m;
 	const struct sockaddr *dst;
 	int error;
@@ -323,14 +327,14 @@ ip6flow_fastforward(struct mbuf **mp)
 	if ((rt = rtcache_validate(&ip6f->ip6f_ro)) == NULL ||
 	    (rt->rt_ifp->if_flags & IFF_UP) == 0 ||
 	    (rt->rt_flags & RTF_BLACKHOLE) != 0)
-		goto out;
+		goto out_unref;
 
 	/*
 	 * Packet size greater than MTU?
 	 */
 	if (m->m_pkthdr.len > rt->rt_ifp->if_mtu) {
 		/* Return to main IPv6 input function. */
-		goto out;
+		goto out_unref;
 	}
 
 	/*
@@ -339,7 +343,7 @@ ip6flow_fastforward(struct mbuf **mp)
 	m->m_pkthdr.csum_flags = 0;
 
 	if (ip6->ip6_hlim <= IPV6_HLIMDEC)
-		goto out;
+		goto out_unref;
 
 	/* Decrement hop limit (same as TTL) */
 	ip6->ip6_hlim -= IPV6_HLIMDEC;
@@ -369,7 +373,9 @@ ip6flow_fastforward(struct mbuf **mp)
 		ip6f->ip6f_forwarded++;
 	}
 	ret = 1;
- out:
+out_unref:
+	rtcache_unref(rt, &ip6f->ip6f_ro);
+out:
 	mutex_exit(&ip6flow_lock);
 	return ret;
 }
@@ -378,12 +384,11 @@ ip6flow_fastforward(struct mbuf **mp)
  * Add the IPv6 flow statistics to the main IPv6 statistics.
  */
 static void
-ip6flow_addstats(const struct ip6flow *ip6f)
+ip6flow_addstats_rt(struct rtentry *rt, struct ip6flow *ip6f)
 {
-	struct rtentry *rt;
 	uint64_t *ip6s;
 
-	if ((rt = rtcache_validate(&ip6f->ip6f_ro)) != NULL)
+	if (rt != NULL)
 		rt->rt_use += ip6f->ip6f_uses;
 	ip6s = IP6_STAT_GETREF();
 	ip6s[IP6_STAT_FASTFORWARDFLOWS] = ip6flow_inuse;
@@ -393,6 +398,16 @@ ip6flow_addstats(const struct ip6flow *ip6f)
 	ip6s[IP6_STAT_FORWARD] += ip6f->ip6f_forwarded;
 	ip6s[IP6_STAT_FASTFORWARD] += ip6f->ip6f_forwarded;
 	IP6_STAT_PUTREF();
+}
+
+static void
+ip6flow_addstats(struct ip6flow *ip6f)
+{
+	struct rtentry *rt;
+
+	rt = rtcache_validate(&ip6f->ip6f_ro);
+	ip6flow_addstats_rt(rt, ip6f);
+	rtcache_unref(rt, &ip6f->ip6f_ro);
 }
 
 /*
@@ -448,12 +463,14 @@ ip6flow_reap_locked(int just_one)
 		struct ip6flow *maybe_ip6f = TAILQ_LAST(&ip6flowlist, ip6flowhead);
 
 		TAILQ_FOREACH(ip6f, &ip6flowlist, ip6f_list) {
+			struct rtentry *rt;
 			/*
 			 * If this no longer points to a valid route -
 			 * reclaim it.
 			 */
-			if (rtcache_validate(&ip6f->ip6f_ro) == NULL)
+			if ((rt = rtcache_validate(&ip6f->ip6f_ro)) == NULL)
 				goto done;
+			rtcache_unref(rt, &ip6f->ip6f_ro);
 			/*
 			 * choose the one that's been least recently
 			 * used or has had the least uses in the
@@ -505,27 +522,33 @@ ip6flow_slowtimo_work(struct work *wk, void *arg)
 	/* We can allow enqueuing another work at this point */
 	atomic_swap_uint(&ip6flow_work_enqueued, 0);
 
+#ifndef NET_MPSAFE
 	mutex_enter(softnet_lock);
-	mutex_enter(&ip6flow_lock);
 	KERNEL_LOCK(1, NULL);
+#endif
+	mutex_enter(&ip6flow_lock);
 
 	for (ip6f = TAILQ_FIRST(&ip6flowlist); ip6f != NULL; ip6f = next_ip6f) {
+		struct rtentry *rt = NULL;
 		next_ip6f = TAILQ_NEXT(ip6f, ip6f_list);
 		if (PRT_SLOW_ISEXPIRED(ip6f->ip6f_timer) ||
-		    rtcache_validate(&ip6f->ip6f_ro) == NULL) {
+		    (rt = rtcache_validate(&ip6f->ip6f_ro)) == NULL) {
 			ip6flow_free(ip6f);
 		} else {
 			ip6f->ip6f_last_uses = ip6f->ip6f_uses;
-			ip6flow_addstats(ip6f);
+			ip6flow_addstats_rt(rt, ip6f);
 			ip6f->ip6f_uses = 0;
 			ip6f->ip6f_dropped = 0;
 			ip6f->ip6f_forwarded = 0;
 		}
+		rtcache_unref(rt, &ip6f->ip6f_ro);
 	}
 
-	KERNEL_UNLOCK_ONE(NULL);
 	mutex_exit(&ip6flow_lock);
+#ifndef NET_MPSAFE
+	KERNEL_UNLOCK_ONE(NULL);
 	mutex_exit(softnet_lock);
+#endif
 }
 
 void
@@ -544,15 +567,18 @@ ip6flow_slowtimo(void)
  * IPv6 stack. Now create/update a flow.
  */
 void
-ip6flow_create(const struct route *ro, struct mbuf *m)
+ip6flow_create(struct route *ro, struct mbuf *m)
 {
 	const struct ip6_hdr *ip6;
 	struct ip6flow *ip6f;
 	size_t hash;
 
-	mutex_enter(&ip6flow_lock);
-
 	ip6 = mtod(m, const struct ip6_hdr *);
+
+#ifndef NET_MPSAFE
+	KERNEL_LOCK(1, NULL);
+#endif
+	mutex_enter(&ip6flow_lock);
 
 	/*
 	 * If IPv6 Fast Forward is disabled, don't create a flow.
@@ -560,12 +586,8 @@ ip6flow_create(const struct route *ro, struct mbuf *m)
 	 *
 	 * Don't create a flow for ICMPv6 messages.
 	 */
-	if (ip6_maxflows == 0 || ip6->ip6_nxt == IPPROTO_IPV6_ICMP) {
-		mutex_exit(&ip6flow_lock);
-		return;
-	}
-
-	KERNEL_LOCK(1, NULL);
+	if (ip6_maxflows == 0 || ip6->ip6_nxt == IPPROTO_IPV6_ICMP)
+		goto out;
 
 	/*
 	 * See if an existing flow exists.  If so:
@@ -616,8 +638,10 @@ ip6flow_create(const struct route *ro, struct mbuf *m)
 	IP6FLOW_INSERT(hash, ip6f);
 
  out:
-	KERNEL_UNLOCK_ONE(NULL);
 	mutex_exit(&ip6flow_lock);
+#ifndef NET_MPSAFE
+	KERNEL_UNLOCK_ONE(NULL);
+#endif
 }
 
 /*
@@ -660,13 +684,17 @@ sysctl_net_inet6_ip6_maxflows(SYSCTLFN_ARGS)
 	if (error || newp == NULL)
 		return (error);
 
+#ifndef NET_MPSAFE
 	mutex_enter(softnet_lock);
 	KERNEL_LOCK(1, NULL);
+#endif
 
 	ip6flow_reap(0);
 
+#ifndef NET_MPSAFE
 	KERNEL_UNLOCK_ONE(NULL);
 	mutex_exit(softnet_lock);
+#endif
 
 	return (0);
 }
@@ -688,13 +716,15 @@ sysctl_net_inet6_ip6_hashsize(SYSCTLFN_ARGS)
 		/*
 		 * Can only fail due to malloc()
 		 */
+#ifndef NET_MPSAFE
 		mutex_enter(softnet_lock);
 		KERNEL_LOCK(1, NULL);
-
+#endif
 		error = ip6flow_invalidate_all(tmp);
-
+#ifndef NET_MPSAFE
 		KERNEL_UNLOCK_ONE(NULL);
 		mutex_exit(softnet_lock);
+#endif
 	} else {
 		/*
 		 * EINVAL if not a power of 2

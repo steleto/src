@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.x11.mk,v 1.122 2016/08/30 08:34:43 mrg Exp $
+#	$NetBSD: bsd.x11.mk,v 1.124 2016/12/14 16:03:19 scole Exp $
 
 .include <bsd.init.mk>
 
@@ -97,8 +97,10 @@ X11FLAGS.SERVER+=	-DXINPUT -DXFreeXDGA -DXF86VIDMODE -DXSERVER_LIBPCIACCESS
 .endif
 
 .if ${MACHINE_ARCH} == "alpha"	|| \
+    ${MACHINE_ARCH} == "ia64"   || \
     ${MACHINE_ARCH} == "sparc64" || \
-    ${MACHINE_ARCH} == "x86_64"
+    ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_CPU} == "aarch64"
 #	ServerDefines
 X11FLAGS.SERVER+=	-D_XSERVER64
 X11FLAGS.EXTENSION+=	-D__GLX_ALIGN64

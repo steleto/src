@@ -1,4 +1,4 @@
-/*	$NetBSD: in6_pcb.c,v 1.150 2016/09/29 12:19:47 roy Exp $	*/
+/*	$NetBSD: in6_pcb.c,v 1.155 2016/12/13 08:29:03 ozaki-r Exp $	*/
 /*	$KAME: in6_pcb.c,v 1.84 2001/02/08 18:02:08 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_pcb.c,v 1.150 2016/09/29 12:19:47 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_pcb.c,v 1.155 2016/12/13 08:29:03 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -96,7 +96,6 @@ __KERNEL_RCSID(0, "$NetBSD: in6_pcb.c,v 1.150 2016/09/29 12:19:47 roy Exp $");
 #include <netinet6/ip6_var.h>
 #include <netinet6/in6_pcb.h>
 #include <netinet6/scope6_var.h>
-#include <netinet6/nd6.h>
 
 #include "faith.h"
 
@@ -444,6 +443,7 @@ in6_pcbconnect(void *v, struct sockaddr_in6 *sin6, struct lwp *l)
 {
 	struct in6pcb *in6p = v;
 	struct in6_addr *in6a = NULL;
+	struct in6_addr ia6;
 	struct ifnet *ifp = NULL;	/* outgoing interface */
 	int error = 0;
 	int scope_ambiguous = 0;
@@ -530,15 +530,16 @@ in6_pcbconnect(void *v, struct sockaddr_in6 *sin6, struct lwp *l)
 		 * with the address specified by setsockopt(IPV6_PKTINFO).
 		 * Is it the intended behavior?
 		 */
-		in6a = in6_selectsrc(sin6, in6p->in6p_outputopts,
-				     in6p->in6p_moptions,
-				     &in6p->in6p_route,
-				     &in6p->in6p_laddr, &ifp, &psref, &error);
+		error = in6_selectsrc(sin6, in6p->in6p_outputopts,
+		    in6p->in6p_moptions, &in6p->in6p_route, &in6p->in6p_laddr,
+		    &ifp, &psref, &ia6);
+		if (error == 0)
+			in6a = &ia6;
 		if (ifp && scope_ambiguous &&
 		    (error = in6_setscope(&sin6->sin6_addr, ifp, NULL)) != 0) {
 			if_put(ifp, &psref);
 			curlwp_bindx(bound);
-			return(error);
+			return error;
 		}
 
 		if (in6a == NULL) {
@@ -546,7 +547,7 @@ in6_pcbconnect(void *v, struct sockaddr_in6 *sin6, struct lwp *l)
 			curlwp_bindx(bound);
 			if (error == 0)
 				error = EADDRNOTAVAIL;
-			return (error);
+			return error;
 		}
 	}
 
@@ -694,7 +695,6 @@ in6_pcbnotify(struct inpcbtable *table, const struct sockaddr *dst,
     u_int fport_arg, const struct sockaddr *src, u_int lport_arg, int cmd,
     void *cmdarg, void (*notify)(struct in6pcb *, int))
 {
-	struct rtentry *rt;
 	struct inpcb_hdr *inph, *ninph;
 	struct sockaddr_in6 sa6_src;
 	const struct sockaddr_in6 *sa6_dst;
@@ -736,6 +736,8 @@ in6_pcbnotify(struct inpcbtable *table, const struct sockaddr *dst,
 	errno = inet6ctlerrmap[cmd];
 	TAILQ_FOREACH_SAFE(inph, &table->inpt_queue, inph_queue, ninph) {
 		struct in6pcb *in6p = (struct in6pcb *)inph;
+		struct rtentry *rt = NULL;
+
 		if (in6p->in6p_af != AF_INET6)
 			continue;
 
@@ -781,9 +783,12 @@ in6_pcbnotify(struct inpcbtable *table, const struct sockaddr *dst,
 			if (dst6 == NULL)
 				;
 			else if (IN6_ARE_ADDR_EQUAL(&dst6->sin6_addr,
-			    &sa6_dst->sin6_addr))
+			    &sa6_dst->sin6_addr)) {
+				rtcache_unref(rt, &in6p->in6p_route);
 				goto do_notify;
+			}
 		}
+		rtcache_unref(rt, &in6p->in6p_route);
 
 		/*
 		 * If the error designates a new path MTU for a destination
@@ -885,8 +890,11 @@ in6_pcbpurgeif(struct inpcbtable *table, struct ifnet *ifp)
 		if (in6p->in6p_af != AF_INET6)
 			continue;
 		if ((rt = rtcache_validate(&in6p->in6p_route)) != NULL &&
-		    rt->rt_ifp == ifp)
+		    rt->rt_ifp == ifp) {
+			rtcache_unref(rt, &in6p->in6p_route);
 			in6_rtchange(in6p, 0);
+		} else
+			rtcache_unref(rt, &in6p->in6p_route);
 	}
 }
 
@@ -914,9 +922,16 @@ in6_losing(struct in6pcb *in6p)
 	info.rti_info[RTAX_NETMASK] = rt_mask(rt);
 	rt_missmsg(RTM_LOSING, &info, rt->rt_flags, 0);
 	if (rt->rt_flags & RTF_DYNAMIC) {
-		(void)rtrequest(RTM_DELETE, rt_getkey(rt),
-		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, NULL);
-	}
+		int error;
+		struct rtentry *nrt;
+
+		error = rtrequest(RTM_DELETE, rt_getkey(rt),
+		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, &nrt);
+		rtcache_unref(rt, &in6p->in6p_route);
+		if (error == 0)
+			rt_free(nrt);
+	} else
+		rtcache_unref(rt, &in6p->in6p_route);
 	/*
 	 * A new route can be allocated
 	 * the next time output is attempted.
@@ -1147,6 +1162,13 @@ in6_pcbrtentry(struct in6pcb *in6p)
 		rt = rtcache_init(ro);
 	}
 	return rt;
+}
+
+void
+in6_pcbrtentry_unref(struct rtentry *rt, struct in6pcb *in6p)
+{
+
+	rtcache_unref(rt, &in6p->in6p_route);
 }
 
 struct in6pcb *

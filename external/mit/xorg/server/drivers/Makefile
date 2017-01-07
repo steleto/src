@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.89 2016/09/28 18:12:06 macallan Exp $
+#	$NetBSD: Makefile,v 1.93 2016/12/03 16:38:15 macallan Exp $
 
 .include <bsd.own.mk>
 
@@ -93,15 +93,12 @@ SUBDIR+= \
 
 .if ${MACHINE} == "alpha"
 SUBDIR+= \
-	xf86-video-apm \
-	xf86-video-ark \
 	xf86-video-ast \
 	xf86-video-ati \
 	xf86-video-chips \
 	xf86-video-cirrus \
 	xf86-video-cirrus_alpine \
 	xf86-video-cirrus_laguna \
-	xf86-video-glint \
 	xf86-video-i128 \
 	xf86-video-i740 \
 	xf86-video-mach64 \
@@ -120,6 +117,13 @@ SUBDIR+= \
 	xf86-video-tseng \
 	xf86-video-wsfb
 #	xf86-video-imstt
+# needs porting for xorg-server 1.18
+.if ${XORG_SERVER_SUBDIR} == "xorg-server.old"
+SUBDIR+= \
+	xf86-video-apm \
+	xf86-video-ark \
+	xf86-video-glint
+.endif	# ${XORG_SERVER_SUBDIR} == "xorg-server.old"
 .endif	# ${MACHINE} == "alpha"
 
 .if ${MACHINE} == "amiga"
@@ -219,6 +223,7 @@ SUBDIR+= \
 SUBDIR+= \
 	xf86-video-ati \
 	xf86-video-chips \
+	xf86-video-glint \
 	xf86-video-mach64 \
 	xf86-video-mga \
 	xf86-video-nv \
@@ -263,13 +268,16 @@ SUBDIR+= \
 
 .if ${MACHINE} == "sgimips"
 SUBDIR+= \
-	xf86-video-crime \
 	xf86-video-cirrus \
 	xf86-video-glint \
 	xf86-video-mga \
-	xf86-video-newport \
 	xf86-video-s3 \
 	xf86-video-wsfb
+.if ${XORG_SERVER_SUBDIR} == "xorg-server.old"
+SUBDIR+= \
+	xf86-video-crime \
+	xf86-video-newport
+.endif  # ${XORG_SERVER_SUBDIR} == "xorg-server.old"
 .endif	# ${MACHINE} == "sgimips"
 
 .if ${MACHINE} == "shark"
@@ -283,6 +291,7 @@ SUBDIR+= \
     ${MACHINE} == "sparc64"
 SUBDIR+= \
 	xf86-video-ati \
+	xf86-video-glint \
 	xf86-video-mach64 \
 	xf86-video-mga \
 	xf86-video-r128 \
@@ -291,7 +300,6 @@ SUBDIR+= \
 	xf86-video-sunffb \
 	xf86-video-wsfb
 #	xf86-video-ag10e \
-#	xf86-video-glint \
 
 .if ${XORG_SERVER_SUBDIR} == "xorg-server.old"
 SUBDIR+= \
@@ -309,6 +317,10 @@ SUBDIR+= \
 SUBDIR+= \
 	xf86-video-suncg14 \
 	xf86-video-suntcx
+.if ${XORG_SERVER_SUBDIR} == "xorg-server.old"
+SUBDIR+= \
+	xf86-video-pnozz
+.endif	# ${XORG_SERVER_SUBDIR} == "xorg-server.old"
 .endif	# ${MACHINE} == "sparc"
 .endif	# ${MACHINE} == "sparc" || ${MACHINE} == "sparc64"
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: npf.h,v 1.47 2014/08/10 19:09:43 rmind Exp $	*/
+/*	$NetBSD: npf.h,v 1.51 2016/12/10 19:05:45 christos Exp $	*/
 
 /*-
  * Copyright (c) 2009-2014 The NetBSD Foundation, Inc.
@@ -45,7 +45,7 @@
 #include <netinet/in_systm.h>
 #include <netinet/in.h>
 
-#define	NPF_VERSION		17
+#define	NPF_VERSION		18
 
 /*
  * Public declarations and definitions.
@@ -116,8 +116,8 @@ void *		nbuf_ensure_contig(nbuf_t *, size_t);
 void *		nbuf_ensure_writable(nbuf_t *, size_t);
 
 bool		nbuf_cksum_barrier(nbuf_t *, int);
-int		nbuf_add_tag(nbuf_t *, uint32_t, uint32_t);
-int		nbuf_find_tag(nbuf_t *, uint32_t, void **);
+int		nbuf_add_tag(nbuf_t *, uint32_t);
+int		nbuf_find_tag(nbuf_t *, uint32_t *);
 
 /*
  * Packet information cache.
@@ -262,6 +262,9 @@ bool		npf_autounload_p(void);
 /* XXX mbuf.h: just for now. */
 #define	PACKET_TAG_NPF			10
 
+/* Packet tags. */
+#define	NPF_NTAG_PASS			0x0001
+
 /*
  * Rule commands (non-ioctl).
  */
@@ -314,6 +317,7 @@ typedef struct npf_ioctl_table {
 #define	IOC_NPF_STATS		_IOW('N', 104, void *)
 #define	IOC_NPF_SAVE		_IOR('N', 105, struct plistref)
 #define	IOC_NPF_RULE		_IOWR('N', 107, struct plistref)
+#define	IOC_NPF_CONN_LOOKUP	_IOWR('N', 108, struct plistref)
 
 /*
  * Statistics counters.

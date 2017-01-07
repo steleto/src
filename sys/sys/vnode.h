@@ -1,4 +1,4 @@
-/*	$NetBSD: vnode.h,v 1.264 2016/08/20 12:37:09 hannken Exp $	*/
+/*	$NetBSD: vnode.h,v 1.267 2016/12/14 15:48:55 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -119,7 +119,6 @@ struct vnode;
 struct buf;
 
 LIST_HEAD(buflists, buf);
-TAILQ_HEAD(vnodelst, vnode);
 
 /*
  * Reading or writing any of these items requires holding the appropriate
@@ -152,8 +151,6 @@ struct vnode {
 	int		v_synclist_slot;	/* s: synclist slot index */
 	struct mount	*v_mount;		/* v: ptr to vfs we are in */
 	int		(**v_op)(void *);	/* :: vnode operations vector */
-	TAILQ_ENTRY(vnode) v_freelist;		/* f: vnode freelist */
-	struct vnodelst	*v_freelisthd;		/* f: which freelist? */
 	TAILQ_ENTRY(vnode) v_mntvnodes;		/* m: vnodes for mount point */
 	struct buflists	v_cleanblkhd;		/* x: clean blocklist head */
 	struct buflists	v_dirtyblkhd;		/* x: dirty blocklist head */
@@ -181,7 +178,6 @@ struct vnode {
 #define	v_fifoinfo	v_un.vu_fifoinfo
 #define	v_ractx		v_un.vu_ractx
 
-typedef struct vnodelst vnodelst_t;
 typedef struct vnode vnode_t;
 #endif
 
@@ -530,7 +526,6 @@ void 	vput(struct vnode *);
 bool	vrecycle(struct vnode *);
 void 	vrele(struct vnode *);
 void 	vrele_async(struct vnode *);
-void	vrele_flush(void);
 int	vtruncbuf(struct vnode *, daddr_t, bool, int);
 void	vwakeup(struct buf *);
 int	vdead_check(struct vnode *, int);
@@ -581,7 +576,6 @@ uint8_t	vtype2dt(enum vtype);
 
 /* see vfssubr(9) */
 void	vfs_getnewfsid(struct mount *);
-int	vfs_drainvnodes(long);
 void	vfs_timestamp(struct timespec *);
 #if defined(DDB) || defined(DEBUGPRINT)
 void	vfs_vnode_print(struct vnode *, int, void (*)(const char *, ...)
@@ -589,18 +583,6 @@ void	vfs_vnode_print(struct vnode *, int, void (*)(const char *, ...)
 void	vfs_mount_print(struct mount *, int, void (*)(const char *, ...)
     __printflike(1, 2));
 #endif /* DDB */
-
-#ifdef _VFS_VNODE_PRIVATE
-/*
- * Private vnode manipulation functions.
- */
-struct vnode *
-	vnalloc_marker(struct mount *);
-void	vnfree_marker(vnode_t *);
-bool	vnis_marker(vnode_t *);
-void	vcache_print(vnode_t *, const char *,
-    void (*)(const char *, ...) __printflike(1, 2));
-#endif	/* _VFS_VNODE_PRIVATE */
 
 #endif /* _KERNEL */
 

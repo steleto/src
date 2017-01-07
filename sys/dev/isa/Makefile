@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.8 2008/04/02 01:34:36 dyoung Exp $
+#	$NetBSD: Makefile,v 1.10 2016/12/09 06:04:06 christos Exp $
 
 INCSDIR= /usr/include/dev/isa
 

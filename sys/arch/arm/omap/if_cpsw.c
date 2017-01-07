@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cpsw.c,v 1.16 2016/08/04 14:08:23 kiyohara Exp $	*/
+/*	$NetBSD: if_cpsw.c,v 1.18 2016/12/15 09:28:02 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: if_cpsw.c,v 1.16 2016/08/04 14:08:23 kiyohara Exp $");
+__KERNEL_RCSID(1, "$NetBSD: if_cpsw.c,v 1.18 2016/12/15 09:28:02 ozaki-r Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -572,6 +572,7 @@ cpsw_attach(device_t parent, device_t self, void *aux)
 	}
 
 	if_attach(ifp);
+	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, sc->sc_enaddr);
 
 	/* The attach is successful. */
@@ -1166,10 +1167,6 @@ cpsw_rxintr(void *arg)
 		m->m_pkthdr.len = m->m_len = len;
 		m->m_data += off;
 
-		ifp->if_ipackets++;
-
-		bpf_mtap(ifp, m);
-
 		if_percpuq_enqueue(ifp->if_percpuq, m);
 
 next:
@@ -1303,7 +1300,7 @@ next:
 		ifp->if_timer = 0;
 
 	if (handled)
-		cpsw_start(ifp);
+		if_schedule_deferred_start(ifp);
 
 	return handled;
 }

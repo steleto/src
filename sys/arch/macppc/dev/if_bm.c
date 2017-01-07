@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bm.c,v 1.49 2016/07/15 22:10:47 macallan Exp $	*/
+/*	$NetBSD: if_bm.c,v 1.53 2016/12/15 09:28:03 ozaki-r Exp $	*/
 
 /*-
  * Copyright (C) 1998, 1999, 2000 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bm.c,v 1.49 2016/07/15 22:10:47 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bm.c,v 1.53 2016/12/15 09:28:03 ozaki-r Exp $");
 
 #include "opt_inet.h"
 
@@ -260,6 +260,7 @@ bmac_attach(device_t parent, device_t self, void *aux)
 	bmac_reset_chip(sc);
 
 	if_attach(ifp);
+	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, sc->sc_enaddr);
 }
 
@@ -441,7 +442,7 @@ bmac_intr(void *v)
 		sc->sc_if.if_flags &= ~IFF_OACTIVE;
 		sc->sc_if.if_timer = 0;
 		sc->sc_if.if_opackets++;
-		bmac_start(&sc->sc_if);
+		if_schedule_deferred_start(&sc->sc_if);
 	}
 
 	/* XXX should do more! */
@@ -498,13 +499,7 @@ bmac_rint(void *v)
 			goto next;
 		}
 
-		/*
-		 * Check if there's a BPF listener on this interface.
-		 * If so, hand off the raw packet to BPF.
-		 */
-		bpf_mtap(ifp, m);
 		if_percpuq_enqueue(ifp->if_percpuq, m);
-		ifp->if_ipackets++;
 
 next:
 		DBDMA_BUILD_CMD(cmd, DBDMA_CMD_IN_LAST, 0, DBDMA_INT_ALWAYS,
@@ -621,13 +616,13 @@ bmac_put(struct bmac_softc *sc, void *buff, struct mbuf *m)
 	for (; m; m = n) {
 		len = m->m_len;
 		if (len == 0) {
-			MFREE(m, n);
+			n = m_free(m);
 			continue;
 		}
 		memcpy(buff, mtod(m, void *), len);
 		buff = (char *)buff + len;
 		tlen += len;
-		MFREE(m, n);
+		n = m_free(m);
 	}
 	if (tlen > PAGE_SIZE)
 		panic("%s: putpacket packet overflow",

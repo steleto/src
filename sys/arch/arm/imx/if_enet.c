@@ -1,4 +1,4 @@
-/*	$NetBSD: if_enet.c,v 1.8 2016/06/15 07:26:11 ryo Exp $	*/
+/*	$NetBSD: if_enet.c,v 1.10 2016/12/15 09:28:02 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_enet.c,v 1.8 2016/06/15 07:26:11 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_enet.c,v 1.10 2016/12/15 09:28:02 ozaki-r Exp $");
 
 #include "vlan.h"
 
@@ -640,7 +640,6 @@ enet_rx_intr(void *arg)
 
 			} else {
 				/* packet receive ok */
-				ifp->if_ipackets++;
 				m_set_rcvif(m0, ifp);
 				m0->m_pkthdr.len = amount;
 
@@ -652,9 +651,6 @@ enet_rx_intr(void *arg)
 				    M_CSUM_TCPv4 | M_CSUM_UDPv4 |
 				    M_CSUM_TCPv6 | M_CSUM_UDPv6))
 					enet_rx_csum(sc, ifp, m0, idx);
-
-				/* Pass this up to any BPF listeners */
-				bpf_mtap(ifp, m0);
 
 				if_percpuq_enqueue(ifp->if_percpuq, m0);
 			}
@@ -1507,7 +1503,7 @@ enet_encap_mbufalign(struct mbuf **mp)
 					memcpy(mtod(x, void *), mtod(m, void *),
 					    m->m_len);
 					p->m_next = x;
-					MFREE(m, x->m_next);
+					x->m_next = m_free(m);
 					m = x;
 				}
 			}

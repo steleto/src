@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.186 2016/10/01 17:17:20 roy Exp $	*/
+/*	$NetBSD: in.c,v 1.191 2016/12/12 03:55:57 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.186 2016/10/01 17:17:20 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.191 2016/12/12 03:55:57 ozaki-r Exp $");
 
 #include "arp.h"
 
@@ -99,6 +99,7 @@ __KERNEL_RCSID(0, "$NetBSD: in.c,v 1.186 2016/10/01 17:17:20 roy Exp $");
 #include "opt_inet.h"
 #include "opt_inet_conf.h"
 #include "opt_mrouting.h"
+#include "opt_net_mpsafe.h"
 #endif
 
 #include <sys/param.h>
@@ -148,6 +149,9 @@ static void	in_len2mask(struct in_addr *, u_int);
 static int	in_lifaddr_ioctl(struct socket *, u_long, void *,
 	struct ifnet *);
 
+static void	in_addrhash_insert_locked(struct in_ifaddr *);
+static void	in_addrhash_remove_locked(struct in_ifaddr *);
+
 static int	in_addprefix(struct in_ifaddr *, int);
 static void	in_scrubaddr(struct in_ifaddr *);
 static int	in_scrubprefix(struct in_ifaddr *);
@@ -192,6 +196,7 @@ u_long				in_ifaddrhash;
 struct in_ifaddrhead		in_ifaddrhead;
 static kmutex_t			in_ifaddr_lock;
 
+pserialize_t			in_ifaddrhash_psz;
 struct pslist_head *		in_ifaddrhashtbl_pslist;
 u_long				in_ifaddrhash_pslist;
 struct pslist_head		in_ifaddrhead_pslist;
@@ -207,6 +212,7 @@ in_init(void)
 	in_ifaddrhashtbl = hashinit(IN_IFADDR_HASH_SIZE, HASH_LIST, true,
 	    &in_ifaddrhash);
 
+	in_ifaddrhash_psz = pserialize_create();
 	in_ifaddrhashtbl_pslist = hashinit(IN_IFADDR_HASH_SIZE, HASH_PSLIST,
 	    true, &in_ifaddrhash_pslist);
 	mutex_init(&in_ifaddr_lock, MUTEX_DEFAULT, IPL_NONE);
@@ -595,10 +601,7 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 
 	case SIOCSIFADDR:
 		if (!newifaddr) {
-			mutex_enter(&in_ifaddr_lock);
-			LIST_REMOVE(ia, ia_hash);
-			IN_ADDRHASH_WRITER_REMOVE(ia);
-			mutex_exit(&in_ifaddr_lock);
+			in_addrhash_remove(ia);
 			need_reinsert = true;
 		}
 		error = in_ifinit(ifp, ia, satocsin(ifreq_getaddr(cmd, ifr)),
@@ -612,10 +615,7 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		ia->ia_sockmask = *satocsin(ifreq_getaddr(cmd, ifr));
 		ia->ia_subnetmask = ia->ia_sockmask.sin_addr.s_addr;
 		if (!newifaddr) {
-			mutex_enter(&in_ifaddr_lock);
-			LIST_REMOVE(ia, ia_hash);
-			IN_ADDRHASH_WRITER_REMOVE(ia);
-			mutex_exit(&in_ifaddr_lock);
+			in_addrhash_remove(ia);
 			need_reinsert = true;
 		}
 		error = in_ifinit(ifp, ia, NULL, NULL, 0);
@@ -638,10 +638,7 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		if (ifra->ifra_addr.sin_family == AF_INET &&
 		    (hostIsNew || maskIsNew)) {
 			if (!newifaddr) {
-				mutex_enter(&in_ifaddr_lock);
-				LIST_REMOVE(ia, ia_hash);
-				IN_ADDRHASH_WRITER_REMOVE(ia);
-				mutex_exit(&in_ifaddr_lock);
+				in_addrhash_remove(ia);
 				need_reinsert = true;
 			}
 			error = in_ifinit(ifp, ia, &ifra->ifra_addr,
@@ -700,16 +697,10 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		mutex_enter(&in_ifaddr_lock);
 		TAILQ_INSERT_TAIL(&in_ifaddrhead, ia, ia_list);
 		IN_ADDRLIST_WRITER_INSERT_TAIL(ia);
-		LIST_INSERT_HEAD(&IN_IFADDR_HASH(ia->ia_addr.sin_addr.s_addr),
-		    ia, ia_hash);
-		IN_ADDRHASH_WRITER_INSERT_HEAD(ia);
+		in_addrhash_insert_locked(ia);
 		mutex_exit(&in_ifaddr_lock);
 	} else if (need_reinsert) {
-		mutex_enter(&in_ifaddr_lock);
-		LIST_INSERT_HEAD(&IN_IFADDR_HASH(ia->ia_addr.sin_addr.s_addr),
-		    ia, ia_hash);
-		IN_ADDRHASH_WRITER_INSERT_HEAD(ia);
-		mutex_exit(&in_ifaddr_lock);
+		in_addrhash_insert(ia);
 	}
 
 	if (error == 0) {
@@ -734,9 +725,13 @@ in_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 {
 	int error;
 
+#ifndef NET_MPSAFE
 	mutex_enter(softnet_lock);
+#endif
 	error = in_control0(so, cmd, data, ifp);
+#ifndef NET_MPSAFE
 	mutex_exit(softnet_lock);
+#endif
 
 	return error;
 }
@@ -828,20 +823,67 @@ in_purgeaddr(struct ifaddr *ifa)
 
 	KASSERT(!ifa_held(ifa));
 
+	ifa->ifa_flags |= IFA_DESTROYING;
 	in_scrubaddr(ia);
 
 	mutex_enter(&in_ifaddr_lock);
-	LIST_REMOVE(ia, ia_hash);
-	IN_ADDRHASH_WRITER_REMOVE(ia);
+	in_addrhash_remove_locked(ia);
 	TAILQ_REMOVE(&in_ifaddrhead, ia, ia_list);
 	IN_ADDRLIST_WRITER_REMOVE(ia);
 	ifa_remove(ifp, &ia->ia_ifa);
 	mutex_exit(&in_ifaddr_lock);
 
+#ifdef NET_MPSAFE
+	pserialize_perform(in_ifaddrhash_psz);
+#endif
 	IN_ADDRHASH_ENTRY_DESTROY(ia);
 	IN_ADDRLIST_ENTRY_DESTROY(ia);
 	ifafree(&ia->ia_ifa);
 	in_setmaxmtu();
+}
+
+static void
+in_addrhash_insert_locked(struct in_ifaddr *ia)
+{
+
+	KASSERT(mutex_owned(&in_ifaddr_lock));
+
+	LIST_INSERT_HEAD(&IN_IFADDR_HASH(ia->ia_addr.sin_addr.s_addr), ia,
+	    ia_hash);
+	IN_ADDRHASH_ENTRY_INIT(ia);
+	IN_ADDRHASH_WRITER_INSERT_HEAD(ia);
+}
+
+void
+in_addrhash_insert(struct in_ifaddr *ia)
+{
+
+	mutex_enter(&in_ifaddr_lock);
+	in_addrhash_insert_locked(ia);
+	mutex_exit(&in_ifaddr_lock);
+}
+
+static void
+in_addrhash_remove_locked(struct in_ifaddr *ia)
+{
+
+	KASSERT(mutex_owned(&in_ifaddr_lock));
+
+	LIST_REMOVE(ia, ia_hash);
+	IN_ADDRHASH_WRITER_REMOVE(ia);
+}
+
+void
+in_addrhash_remove(struct in_ifaddr *ia)
+{
+
+	mutex_enter(&in_ifaddr_lock);
+	in_addrhash_remove_locked(ia);
+	mutex_exit(&in_ifaddr_lock);
+#ifdef NET_MPSAFE
+	pserialize_perform(in_ifaddrhash_psz);
+#endif
+	IN_ADDRHASH_ENTRY_DESTROY(ia);
 }
 
 void
@@ -1749,7 +1791,7 @@ in_selectsrc(struct sockaddr_in *sin, struct route *ro,
 		}
 		if (ia == NULL) {
 			*errorp = EADDRNOTAVAIL;
-			return NULL;
+			goto out;
 		}
 	}
 	/*
@@ -1779,7 +1821,8 @@ in_selectsrc(struct sockaddr_in *sin, struct route *ro,
 				if (ia != NULL)
 					ia4_release(ia, psref);
 				*errorp = EADDRNOTAVAIL;
-				return NULL;
+				ia = NULL;
+				goto out;
 			}
 			pserialize_read_exit(s);
 		}
@@ -1789,7 +1832,7 @@ in_selectsrc(struct sockaddr_in *sin, struct route *ro,
 		                                      sintosa(sin)));
 		if (ia == NULL) {
 			*errorp = EADDRNOTAVAIL;
-			return NULL;
+			goto out;
 		}
 		/* FIXME NOMPSAFE */
 		ia4_acquire(ia, psref);
@@ -1798,6 +1841,8 @@ in_selectsrc(struct sockaddr_in *sin, struct route *ro,
 	else
 		printf("%s: missing ifa_getifa\n", __func__);
 #endif
+out:
+	rtcache_unref(rt, ro);
 	return ia;
 }
 
@@ -1964,7 +2009,7 @@ in_lltable_rtcheck(struct ifnet *ifp, u_int flags, const struct sockaddr *l3addr
 
 	error = 0;
 error:
-	rtfree(rt);
+	rt_unref(rt);
 	return error;
 }
 

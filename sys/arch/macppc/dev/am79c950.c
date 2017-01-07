@@ -1,4 +1,4 @@
-/*	$NetBSD: am79c950.c,v 1.35 2016/06/10 13:27:11 ozaki-r Exp $	*/
+/*	$NetBSD: am79c950.c,v 1.37 2016/12/15 09:28:03 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1997 David Huang <khym@bga.com>
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: am79c950.c,v 1.35 2016/06/10 13:27:11 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: am79c950.c,v 1.37 2016/12/15 09:28:03 ozaki-r Exp $");
 
 #include "opt_inet.h"
 
@@ -417,7 +417,7 @@ maceput(struct mc_softc *sc, struct mbuf *m)
 		totlen += len;
 		memcpy(buff, data, len);
 		buff += len;
-		MFREE(m, n);
+		n = m_free(m);
 	}
 
 	if (totlen > PAGE_SIZE)
@@ -590,11 +590,6 @@ mace_read(struct mc_softc *sc, uint8_t *pkt, int len)
 		ifp->if_ierrors++;
 		return;
 	}
-
-	ifp->if_ipackets++;
-
-	/* Pass this up to any BPF listeners. */
-	bpf_mtap(ifp, m); 
 
 	/* Pass the packet up. */
 	if_percpuq_enqueue(ifp->if_percpuq, m);

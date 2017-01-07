@@ -1,4 +1,4 @@
-/*	$NetBSD: mipsX_subr.S,v 1.93 2016/08/27 07:22:14 skrll Exp $	*/
+/*	$NetBSD: mipsX_subr.S,v 1.96 2016/11/19 09:05:50 skrll Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -136,12 +136,6 @@
 
 #if defined(MIPS1) || defined(MIPS2)
 #error use locore_mips1.S
-#endif
-
-#if defined(MIPS3)
-#define	MFC0_HAZARD	nop
-#else
-#define	MFC0_HAZARD	/* nothing */
 #endif
 
 #if defined(__mips_o32)
@@ -387,11 +381,7 @@ VECTOR(MIPSX(tlb_miss), unknown)
 	dmfc0	k0, MIPS_COP_0_BAD_VADDR	#0d: k0=bad address (again)
 	PTR_L	k1, 0(k1)			#0e: k1=seg entry
 	b	MIPSX(tlb_miss_common)		#0f
-#ifdef MIPSNNR2
-	 _EXT	k0, k0, SEGSHIFT, SEGLENGTH	#10: k0=seg index
-#else
 	 PTR_SRL k0, SEGSHIFT - PTR_SCALESHIFT	#10: k0=seg offset (almost)
-#endif
 #endif /* LP64 */
 2: /* handle useg addresses */
 	lui	k1, %hi(CPUVAR(PMAP_SEG0TAB))	#11: k1=hi of seg0tab
@@ -648,17 +638,16 @@ _VECTOR_END(MIPSX(exception))
  */
 VECTOR(MIPSX(intr), unknown)
 	.set	noat
-	mfc0	k1, MIPS_COP_0_STATUS		#00: get the status register
+	mfc0	k0, MIPS_COP_0_STATUS		#00: get the status register
 	MFC0_HAZARD				#01: stall
-	and	k1, k1, MIPS3_SR_KSU_USER	#02: test for user mode
-	PTR_LA	k0, MIPSX(user_intr)		#03: assume user mode
-	bnez	k1, 1f				#04: yep, do it
-	 nop					#05:  branch deay
-	PTR_LA	k0, MIPSX(kern_intr)		#06: nope, kernel intr
+	and	k0, k0, MIPS3_SR_KSU_USER	#02: test for user mode
+	bnez	k0, 1f				#03: yep, do it
+	 nop					#04:  branch deay
+	j	MIPSX(kern_intr)		#05: nope, kernel intr
 1:
-	lui	k1, %hi(CPUVAR(CURLWP))		#07: k1=hi of curlwp
-	jr	k0				#08: jump to the function
-	 PTR_L	k1, %lo(CPUVAR(CURLWP))(k1)	#09: k1=lo of curlwp
+	lui	k1, %hi(CPUVAR(CURLWP))		#06: k1=hi of curlwp
+	j	MIPSX(user_intr)		#07: user intr
+	 PTR_L	k1, %lo(CPUVAR(CURLWP))(k1)	#08: k1=lo of curlwp
 	.set	at
 _VECTOR_END(MIPSX(intr))
 

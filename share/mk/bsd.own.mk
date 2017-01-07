@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.964 2016/09/29 03:53:13 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.999 2016/12/11 06:37:49 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -66,11 +66,6 @@ MKGCC?=		no
 #
 .if ${MACHINE_CPU} == "aarch64"
 HAVE_GCC?=	0
-.elif \
-    ${MACHINE_ARCH} == "mips64el" || ${MACHINE_ARCH} == "mips64eb" || \
-    ${MACHINE} == "or1k" || \
-    ${MACHINE} == "riscv"
-HAVE_GCC?=	48
 .else
 HAVE_GCC?=	53
 .endif
@@ -87,8 +82,6 @@ MKGCCCMDS?=	no
 #
 .if ${HAVE_GCC} == 53
 EXTERNAL_GCC_SUBDIR=	gcc
-.elif ${HAVE_GCC} == 48
-EXTERNAL_GCC_SUBDIR=	gcc.old
 .else
 EXTERNAL_GCC_SUBDIR=	/does/not/exist
 .endif
@@ -101,6 +94,7 @@ _LIBC_COMPILER_RT.${MACHINE_ARCH}=	yes
 .endif
 
 _LIBC_COMPILER_RT.aarch64=	yes
+_LIBC_COMPILER_RT.aarch64eb=	yes
 _LIBC_COMPILER_RT.i386=		yes
 _LIBC_COMPILER_RT.powerpc=	yes
 _LIBC_COMPILER_RT.powerpc64=	yes
@@ -137,56 +131,25 @@ USE_SSP?=	yes
 #
 # What GDB is used?
 #
-.if ${MACHINE} == "alpha" || \
-    ${MACHINE} == "amd64" || \
-    ${MACHINE} == "i386" || \
-    ${MACHINE} == "ia64" || \
-    ${MACHINE} == "playstation2" || \
-    ${MACHINE} == "sparc" || \
-    ${MACHINE} == "sparc64" || \
-    ${MACHINE} == "vax" || \
-    ${MACHINE_CPU} == "arm" || \
-    ${MACHINE_CPU} == "m68k" || \
-    ${MACHINE_CPU} == "mips" || \
-    ${MACHINE_CPU} == "powerpc" || \
-    ${MACHINE_CPU} == "sh3"
-HAVE_GDB?=	710
-.else
-HAVE_GDB?=	79
-.endif
+HAVE_GDB?=	712
 
-.if ${HAVE_GDB} == 79
+.if ${HAVE_GDB} == 712
+EXTERNAL_GDB_SUBDIR=		gdb
+.elif ${HAVE_GDB} == 710
 EXTERNAL_GDB_SUBDIR=		gdb.old
 .else
-EXTERNAL_GDB_SUBDIR=		gdb
+EXTERNAL_GDB_SUBDIR=		/does/not/exist
 .endif
 
 #
 # What binutils is used?
 #
-.if ${MACHINE} == "alpha" || \
-    ${MACHINE} == "amd64" || \
-    ${MACHINE_CPU} == "arm" || \
-    ${MACHINE} == "hppa" || \
-    ${MACHINE} == "i386" || \
-    ${MACHINE} == "ia64" || \
-    ${MACHINE} == "playstation2" || \
-    ${MACHINE} == "sparc" || \
-    ${MACHINE} == "sparc64" || \
-    ${MACHINE} == "vax" || \
-    ${MACHINE_CPU} == "m68k" || \
-    ${MACHINE_CPU} == "sh3" || \
-    ${MACHINE_ARCH} == "mipseb" || ${MACHINE_ARCH} == "mipsel" || \
-    ${MACHINE_ARCH} == "powerpc"
-HAVE_BINUTILS?=	226
-.else
-HAVE_BINUTILS?=	223
-.endif
+HAVE_BINUTILS?=	227
 
-.if ${HAVE_BINUTILS} == 223
-EXTERNAL_BINUTILS_SUBDIR=	binutils.old
-.elif ${HAVE_BINUTILS} == 226
+.if ${HAVE_BINUTILS} == 227
 EXTERNAL_BINUTILS_SUBDIR=	binutils
+.elif ${HAVE_BINUTILS} == 226
+EXTERNAL_BINUTILS_SUBDIR=	binutils.old
 .else
 EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
 .endif
@@ -804,6 +767,7 @@ MKGCC:= no
 
 # No GDB support for aarch64
 MKGDB.aarch64=	no
+MKGDB.aarch64eb=no
 MKGDB.or1k=	no
 MKGDB.riscv32=	no
 MKGDB.riscv64=	no
@@ -846,9 +810,10 @@ MKGDB.ia64=	no
 MKPICLIB:=	no
 .endif
 
-# PowerPC64 and AArch64 ABI's are PIC
-MKPICLIB.powerpc64=	no
-#MKPICLIB.aarch64=	no
+.if !defined(COMMON_MACHINE_ARCH)
+# Native PowerPC64 ABI is PIC.
+MKPICLIB.powerpc64:=	no
+.endif
 
 #
 # On VAX using ELF, all objects are PIC, not just shared libraries,
@@ -973,7 +938,7 @@ dependall:	.NOTMAIN realdepend .MAKE
 #
 .for var in \
 	NOCRYPTO NODOC NOHTML NOINFO NOLINKLIB NOLINT NOMAN NONLS NOOBJ NOPIC \
-	NOPICINSTALL NOPROFILE NOSHARE NOSTATICLIB
+	NOPICINSTALL NOPROFILE NOSHARE NOSTATICLIB NODEBUGLIB
 .if defined(${var})
 MK${var:S/^NO//}:=	no
 .endif
@@ -991,9 +956,11 @@ MK${var}:=	yes
 #
 # MK* options which have variable defaults.
 #
+# aarch64eb is not yet supported.
+#
 .if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "sparc64" \
     || ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el" \
-    || ${MACHINE_ARCH} == "powerpc64" || ${MACHINE_CPU} == "aarch64" \
+    || ${MACHINE_ARCH} == "powerpc64" || ${MACHINE_ARCH} == "aarch64" \
     || ${MACHINE_ARCH} == "riscv64" || !empty(MACHINE_ARCH:Mearm*)
 MKCOMPAT?=	yes
 .else
@@ -1069,9 +1036,9 @@ MKCTF?=		yes
 #
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64" || \
-    ${MACHINE_ARCH} == "mipsel" || ${MACHINE_ARCH} == "mipseb" || \
     ${MACHINE_CPU} == "arm" || \
     ${MACHINE_CPU} == "m68k" || \
+    ${MACHINE_CPU} == "mips" || \
     ${MACHINE_CPU} == "sh3" || \
     ${MACHINE} == "sparc64"
 MKPIE?=		yes
@@ -1249,6 +1216,7 @@ MKNLS:=		no
 _NEEDS_LIBCXX.${MACHINE_ARCH}=	yes
 .endif
 _NEEDS_LIBCXX.aarch64=		yes
+_NEEDS_LIBCXX.aarch64eb=	yes
 _NEEDS_LIBCXX.i386=		yes
 _NEEDS_LIBCXX.powerpc=		yes
 _NEEDS_LIBCXX.powerpc64=	yes
@@ -1392,17 +1360,28 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 
 # During transition from xorg-server 1.10 to 1.18
 .if \
-    ${MACHINE} == "amd64"	|| \
-    ${MACHINE} == "i386"	|| \
-    ${MACHINE} == "ofppc"	|| \
-    ${MACHINE} == "macppc"	|| \
-    ${MACHINE} == "shark"	|| \
-    ${MACHINE} == "sparc"	|| \
-    ${MACHINE} == "sparc64"	|| \
-    ${MACHINE} == "x68k"
-HAVE_XORG_SERVER_VER?=118
-.else
+    ${MACHINE} == "alpha"	|| \
+    ${MACHINE} == "amiga"	|| \
+    ${MACHINE} == "bebox"	|| \
+    ${MACHINE} == "cats"	|| \
+    ${MACHINE} == "dreamcast"	|| \
+    ${MACHINE} == "ews4800mips"	|| \
+    ${MACHINE} == "hp300"	|| \
+    ${MACHINE} == "hpcarm"	|| \
+    ${MACHINE} == "hpcmips"	|| \
+    ${MACHINE} == "hpcsh"	|| \
+    ${MACHINE} == "ibmnws"	|| \
+    ${MACHINE} == "luna68k"	|| \
+    ${MACHINE} == "mac68k"	|| \
+    ${MACHINE} == "netwinder"	|| \
+    ${MACHINE} == "newsmips"	|| \
+    ${MACHINE} == "prep"	|| \
+    ${MACHINE} == "sgimips"	|| \
+    ${MACHINE} == "vax"		|| \
+    ${MACHINE} == "zaurus"
 HAVE_XORG_SERVER_VER?=110
+.else
+HAVE_XORG_SERVER_VER?=118
 .endif
 
 .if ${HAVE_XORG_SERVER_VER} == "118"
@@ -1466,7 +1445,7 @@ EXTRA_DRIVERS=	modesetting
 	ag10e amdgpu apm ark ast ati ati-kms chips cirrus crime \
 	geode glint i128 i740 igs imstt intel intel-old \
 	${EXTRA_DRIVERS} mach64 mga \
-	neomagic newport nouveau nsc nv nvxbox openchrome pnozz \
+	neomagic newport nouveau nsc nv openchrome pnozz \
 	r128 rendition \
 	s3 s3virge savage siliconmotion sis suncg14 \
 	suncg6 sunffb sunleo suntcx \

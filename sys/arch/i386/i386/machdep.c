@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.762 2016/09/25 12:59:19 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.767 2016/12/15 12:04:18 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.762 2016/09/25 12:59:19 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.767 2016/12/15 12:04:18 kamil Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_ibcs2.h"
@@ -188,6 +188,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.762 2016/09/25 12:59:19 maxv Exp $");
 #include <dev/acpi/acpivar.h>
 #define ACPI_MACHDEP_PRIVATE
 #include <machine/acpi_machdep.h>
+#else
+#include <machine/i82489var.h>
 #endif
 
 #include "isa.h"
@@ -511,6 +513,7 @@ i386_proc0_tss_ldt_init(void)
 	l->l_md.md_regs = (struct trapframe *)pcb->pcb_esp0 - 1;
 	memcpy(&pcb->pcb_fsd, &gdt[GUDATA_SEL], sizeof(pcb->pcb_fsd));
 	memcpy(&pcb->pcb_gsd, &gdt[GUDATA_SEL], sizeof(pcb->pcb_gsd));
+	memset(l->l_md.md_watchpoint, 0, sizeof(*l->l_md.md_watchpoint));
 
 #ifndef XEN
 	lldt(pmap_kernel()->pm_ldt_sel);
@@ -844,6 +847,8 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	memcpy(&pcb->pcb_fsd, &gdt[GUDATA_SEL], sizeof(pcb->pcb_fsd));
 	memcpy(&pcb->pcb_gsd, &gdt[GUDATA_SEL], sizeof(pcb->pcb_gsd));
 
+	memset(l->l_md.md_watchpoint, 0, sizeof(*l->l_md.md_watchpoint));
+
 	tf = l->l_md.md_regs;
 	tf->tf_gs = GSEL(GUGS_SEL, SEL_UPL);
 	tf->tf_fs = GSEL(GUFS_SEL, SEL_UPL);
@@ -993,7 +998,7 @@ initgdt(union descriptor *tgdt)
 	/*
 	 * We jumpstart the bootstrap process a bit so we can update
 	 * page permissions. This is done redundantly later from
-	 * x86_xpmap.c:xen_pmap_bootstrap() - harmless.
+	 * x86_xpmap.c:xen_locore() - harmless.
 	 */
 	xpmap_phys_to_machine_mapping =
 	    (unsigned long *)xen_start_info.mfn_list;
@@ -1131,6 +1136,7 @@ void
 init386(paddr_t first_avail)
 {
 	extern void consinit(void);
+	extern paddr_t local_apic_pa;
 	int x;
 #ifndef XEN
 	union descriptor *tgdt;
@@ -1140,6 +1146,8 @@ init386(paddr_t first_avail)
 	extern int biostramp_image_size;
 	extern u_char biostramp_image[];
 #endif
+
+	KASSERT(first_avail % PAGE_SIZE == 0);
 
 #ifdef XEN
 	XENPRINTK(("HYPERVISOR_shared_info %p (%x)\n", HYPERVISOR_shared_info,
@@ -1173,7 +1181,7 @@ init386(paddr_t first_avail)
 #if defined(PAE) && !defined(XEN)
 	/*
 	 * Save VA and PA of L3 PD of boot processor (for Xen, this is done
-	 * in xen_pmap_bootstrap())
+	 * in xen_locore())
 	 */
 	cpu_info_primary.ci_pae_l3_pdirpa = rcr3();
 	cpu_info_primary.ci_pae_l3_pdir = (pd_entry_t *)(rcr3() + KERNBASE);
@@ -1298,6 +1306,11 @@ init386(paddr_t first_avail)
 	/* Needed early, for bioscall() */
 	cpu_info_primary.ci_pmap = pmap_kernel();
 #endif
+
+	pmap_kenter_pa(local_apic_va, local_apic_pa,
+	    VM_PROT_READ|VM_PROT_WRITE, 0);
+	pmap_update(pmap_kernel());
+	memset((void *)local_apic_va, 0, PAGE_SIZE);
 
 	pmap_kenter_pa(idt_vaddr, idt_paddr, VM_PROT_READ|VM_PROT_WRITE, 0);
 	pmap_kenter_pa(gdt_vaddr, gdt_paddr, VM_PROT_READ|VM_PROT_WRITE, 0);

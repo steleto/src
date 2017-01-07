@@ -1,4 +1,4 @@
-/*	$NetBSD: uhso.c,v 1.22 2016/07/07 06:55:42 msaitoh Exp $	*/
+/*	$NetBSD: uhso.c,v 1.24 2016/11/25 12:56:29 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2009 Iain Hibbert
@@ -37,10 +37,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhso.c,v 1.22 2016/07/07 06:55:42 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhso.c,v 1.24 2016/11/25 12:56:29 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
+#include "opt_usb.h"
 #endif
 
 #include <sys/param.h>
@@ -2164,13 +2165,6 @@ uhso_ifnet_input(struct ifnet *ifp, struct mbuf **mb, uint8_t *cp, size_t cc)
 				*mb = m;
 				break;
 			}
-		} else if (want > got) {
-			aprint_error_ifnet(ifp, "bad IP packet (len=%zd)\n",
-			    want);
-
-			ifp->if_ierrors++;
-			m_freem(m);
-			break;
 		}
 
 		m_set_rcvif(m, ifp);

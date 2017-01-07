@@ -1,6 +1,6 @@
-/*	$NetBSD: ifwatchd.c,v 1.36 2016/09/29 15:25:28 roy Exp $	*/
+/*	$NetBSD: ifwatchd.c,v 1.41 2016/10/07 15:49:58 christos Exp $	*/
 #include <sys/cdefs.h>
- __RCSID("$NetBSD: ifwatchd.c,v 1.36 2016/09/29 15:25:28 roy Exp $");
+__RCSID("$NetBSD: ifwatchd.c,v 1.41 2016/10/07 15:49:58 christos Exp $");
 
 /*-
  * Copyright (c) 2002, 2003 The NetBSD Foundation, Inc.
@@ -63,12 +63,11 @@ __dead static void usage(void);
 static void dispatch(const void *, size_t);
 static enum addrflag check_addrflags(int af, int addrflags);
 static void check_addrs(const struct ifa_msghdr *ifam);
-static void invoke_script(const struct sockaddr *sa, const struct sockaddr *dst,
-    enum event ev, int ifindex, const char *ifname_hint);
+static void invoke_script(const char *ifname, enum event ev,
+    const struct sockaddr *sa, const struct sockaddr *dst);
 static void list_interfaces(const char *ifnames);
 static void check_announce(const struct if_announcemsghdr *ifan);
 static void check_carrier(const struct if_msghdr *ifm);
-static void rescan_interfaces(void);
 static void free_interfaces(void);
 static struct interface_data * find_interface(int index);
 static void run_initial_ups(void);
@@ -190,7 +189,6 @@ main(int argc, char **argv)
 	s = socket(PF_ROUTE, SOCK_RAW, 0);
 	if (s < 0) {
 		syslog(LOG_ERR, "error opening routing socket: %m");
-		perror("open routing socket");
 		exit(EXIT_FAILURE);
 	}
 
@@ -257,7 +255,6 @@ dispatch(const void *msg, size_t len)
 		check_addrs(msg);
 		break;
 	case RTM_IFANNOUNCE:
-		rescan_interfaces();
 		check_announce(msg);
 		break;
 	case RTM_IFINFO:
@@ -338,61 +335,52 @@ check_addrs(const struct ifa_msghdr *ifam)
 	if (ifa != NULL && ifd != NULL) {
 		ev = ifam->ifam_type == RTM_DELADDR ? DOWN : UP;
 		aflag = check_addrflags(ifa->sa_family, ifam->ifam_addrflags);
-		if (ev == UP) {
-			if (aflag == NOTREADY)
-				return;
-			if (aflag == DETACHED)
-				return;		/* XXX set ev to DOWN? */
-		}
-		if ((ev == UP && aflag == READY) ||
-		    (ev == DOWN && aflag == DETACHED /* XXX why DETACHED? */))
-			invoke_script(ifa, brd, ev, ifd->index, ifd->ifname);
+		if ((ev == UP && aflag == READY) || ev == DOWN)
+			invoke_script(ifd->ifname, ev, ifa, brd);
 	}
 }
 
 static void
-invoke_script(const struct sockaddr *sa, const struct sockaddr *dest,
-    enum event ev, int ifindex, const char *ifname_hint)
+invoke_script(const char *ifname, enum event ev,
+    const struct sockaddr *sa, const struct sockaddr *dest)
 {
-	char addr[NI_MAXHOST], daddr[NI_MAXHOST], ifname_buf[IFNAMSIZ];
-	const char * volatile ifname;
+	char addr[NI_MAXHOST], daddr[NI_MAXHOST];
 	const char *script;
 	int status;
 
+	if (ifname == NULL)
+		return;
+
+	script = *scripts[ev];
+	if (script == NULL)
+		return;
+
+	addr[0] = daddr[0] = 0;
 	if (sa != NULL) {
+		const struct sockaddr_in *sin;
+		const struct sockaddr_in6 *sin6;
+
 		if (sa->sa_len == 0) {
-			fprintf(stderr,
-			    "illegal socket address (sa_len == 0)\n");
+			syslog(LOG_ERR,
+			    "illegal socket address (sa_len == 0)");
 			return;
 		}
 		switch (sa->sa_family) {
 		case AF_INET:
-		{
-			const struct sockaddr_in *sin;
-
 			sin = (const struct sockaddr_in *)sa;
 			if (sin->sin_addr.s_addr == INADDR_ANY ||
 			    sin->sin_addr.s_addr == INADDR_BROADCAST)
 				return;
-		}
+			break;
 		case AF_INET6:
-		{
-			const struct sockaddr_in6 *sin6;
-
 			sin6 = (const struct sockaddr_in6 *)sa;
 			if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr))
 				return;
+			break;
+		default:
+			break;
 		}
-		}
-	}
 
-	addr[0] = daddr[0] = 0;
-	ifname = if_indextoname(ifindex, ifname_buf);
-	ifname = ifname ? ifname : ifname_hint;
-	if (ifname == NULL)
-		return;
-
-	if (sa != NULL) {
 		if (getnameinfo(sa, sa->sa_len, addr, sizeof addr, NULL, 0,
 		    NI_NUMERICHOST)) {
 			if (verbose)
@@ -400,6 +388,7 @@ invoke_script(const struct sockaddr *sa, const struct sockaddr *dest,
 			return;	/* this address can not be handled */
 		}
 	}
+
 	if (dest != NULL) {
 		if (getnameinfo(dest, dest->sa_len, daddr, sizeof daddr,
 		    NULL, 0, NI_NUMERICHOST)) {
@@ -408,9 +397,6 @@ invoke_script(const struct sockaddr *sa, const struct sockaddr *dest,
 			return;	/* this address can not be handled */
 		}
 	}
-
-	script = *scripts[ev];
-	if (script == NULL) return;
 
 	if (verbose)
 		(void) printf("calling: %s %s %s %s %s %s\n",
@@ -421,14 +407,13 @@ invoke_script(const struct sockaddr *sa, const struct sockaddr *dest,
 
 	switch (vfork()) {
 	case -1:
-		fprintf(stderr, "cannot fork\n");
+		syslog(LOG_ERR, "cannot fork: %m");
 		break;
 	case 0:
 		if (execl(script, script, ifname, DummyTTY, DummySpeed,
 		    addr, daddr, NULL) == -1) {
 			syslog(LOG_ERR, "could not execute \"%s\": %m",
 			    script);
-			perror(script);
 		}
 		_exit(EXIT_FAILURE);
 	default:
@@ -482,8 +467,7 @@ check_carrier(const struct if_msghdr *ifm)
 	 * inhibit_initial is not set
 	 */
 	carrier_status = ifm->ifm_data.ifi_link_state;
-	if ((carrier_status != p->last_carrier_status) ||
-	    ((p->last_carrier_status == -1) && !inhibit_initial)) {
+	if (carrier_status != p->last_carrier_status) {
 		switch (carrier_status) {
 		case LINK_STATE_UP:
 			ev = CARRIER;
@@ -496,7 +480,7 @@ check_carrier(const struct if_msghdr *ifm)
 				printf("unknown link status ignored\n");
 			return;
 		}
-		invoke_script(NULL, NULL, ev, ifm->ifm_index, p->ifname);
+		invoke_script(p->ifname, ev, NULL, NULL);
 		p->last_carrier_status = carrier_status;
 	}
 }
@@ -513,12 +497,13 @@ check_announce(const struct if_announcemsghdr *ifan)
 
 		switch (ifan->ifan_what) {
 		case IFAN_ARRIVAL:
-			invoke_script(NULL, NULL, ARRIVAL, p->index,
-			    NULL);
+			p->index = ifan->ifan_index;
+			invoke_script(p->ifname, ARRIVAL, NULL, NULL);
 			break;
 		case IFAN_DEPARTURE:
-			invoke_script(NULL, NULL, DEPARTURE, p->index,
-			    p->ifname);
+			p->index = -1;
+			p->last_carrier_status = -1;
+			invoke_script(p->ifname, DEPARTURE, NULL, NULL);
 			break;
 		default:
 			if (verbose)
@@ -527,19 +512,6 @@ check_announce(const struct if_announcemsghdr *ifan)
 			break;
 		}
 		return;
-	}
-}
-
-static void
-rescan_interfaces(void)
-{
-	struct interface_data * p;
-
-	SLIST_FOREACH(p, &ifs, next) {
-		p->index = if_nametoindex(p->ifname);
-		if (verbose)
-			printf("interface \"%s\" has index %d\n", p->ifname,
-			    p->index);
 	}
 }
 
@@ -592,8 +564,7 @@ run_initial_ups(void)
 
 		ifa = p->ifa_addr;
 		if (ifa != NULL && ifa->sa_family == AF_LINK)
-			invoke_script(NULL, NULL, ARRIVAL, ifd->index,
-			    NULL);
+			invoke_script(ifd->ifname, ARRIVAL, NULL, NULL);
 
 		if ((p->ifa_flags & IFF_UP) == 0)
 			continue;
@@ -608,8 +579,7 @@ run_initial_ups(void)
 			if (ioctl(s, SIOCGIFMEDIA, &ifmr) != -1
 			    && (ifmr.ifm_status & IFM_AVALID)
 			    && (ifmr.ifm_status & IFM_ACTIVE)) {
-				invoke_script(NULL, NULL, CARRIER,
-				    ifd->index, ifd->ifname);
+				invoke_script(ifd->ifname, CARRIER, NULL, NULL);
 				ifd->last_carrier_status =
 				    LINK_STATE_UP;
 			    }
@@ -618,7 +588,7 @@ run_initial_ups(void)
 		aflag = check_addrflags(ifa->sa_family, p->ifa_addrflags);
 		if (aflag != READY)
 			continue;
-		invoke_script(ifa, p->ifa_dstaddr, UP, ifd->index, ifd->ifname);
+		invoke_script(ifd->ifname, UP, ifa, p->ifa_dstaddr);
 	}
 	freeifaddrs(res);
 out:
