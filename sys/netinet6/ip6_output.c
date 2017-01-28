@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_output.c,v 1.179 2016/12/08 05:16:34 ozaki-r Exp $	*/
+/*	$NetBSD: ip6_output.c,v 1.182 2017/01/16 15:44:47 christos Exp $	*/
 /*	$KAME: ip6_output.c,v 1.172 2001/03/25 09:55:56 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_output.c,v 1.179 2016/12/08 05:16:34 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_output.c,v 1.182 2017/01/16 15:44:47 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -74,7 +74,6 @@ __KERNEL_RCSID(0, "$NetBSD: ip6_output.c,v 1.179 2016/12/08 05:16:34 ozaki-r Exp
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/errno.h>
-#include <sys/protosw.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/syslog.h>
@@ -582,9 +581,10 @@ ip6_output(
 
 	/* Ensure we only send from a valid address. */
 	if ((error = ip6_ifaddrvalid(&src0)) != 0) {
+		char ip6buf[INET6_ADDRSTRLEN];
 		nd6log(LOG_ERR,
 		    "refusing to send from invalid address %s (pid %d)\n",
-		    ip6_sprintf(&src0), curproc->p_pid);
+		    IN6_PRINT(ip6buf, &src0), curproc->p_pid);
 		IP6_STATINC(IP6_STAT_ODROPPED);
 		in6_ifstat_inc(origifp, ifs6_out_discard);
 		if (error == 1)

@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_mount.c,v 1.42 2016/12/14 15:46:57 hannken Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.45 2017/01/13 10:10:32 hannken Exp $	*/
 
 /*-
  * Copyright (c) 1997-2011 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.42 2016/12/14 15:46:57 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.45 2017/01/13 10:10:32 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -93,12 +93,17 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.42 2016/12/14 15:46:57 hannken Exp $
 #include <miscfs/genfs/genfs.h>
 #include <miscfs/specfs/specdev.h>
 
+static struct vnode *vfs_vnode_iterator_next1(struct vnode_iterator *,
+    bool (*)(void *, struct vnode *), void *, bool);
+
 /* Root filesystem. */
 vnode_t *			rootvnode;
 
 /* Mounted filesystem list. */
 struct mntlist			mountlist;
 kmutex_t			mountlist_lock;
+int vnode_offset_next_by_mount	/* XXX: ugly hack for pstat.c */
+    = offsetof(vnode_impl_t, vi_mntvnodes.tqe_next);
 
 kmutex_t			mntvnode_lock;
 kmutex_t			vfs_list_lock;
@@ -336,77 +341,90 @@ vfs_unbusy(struct mount *mp, bool keepref, struct mount **nextp)
 }
 
 struct vnode_iterator {
-	struct vnode vi_vnode;
+	vnode_impl_t vi_vnode;
 };
 
 void
-vfs_vnode_iterator_init(struct mount *mp, struct vnode_iterator **vip)
+vfs_vnode_iterator_init(struct mount *mp, struct vnode_iterator **vnip)
 {
-	struct vnode *vp;
+	vnode_t *vp;
+	vnode_impl_t *vip;
 
 	vp = vnalloc_marker(mp);
+	vip = VNODE_TO_VIMPL(vp);
 
 	mutex_enter(&mntvnode_lock);
-	TAILQ_INSERT_HEAD(&mp->mnt_vnodelist, vp, v_mntvnodes);
+	TAILQ_INSERT_HEAD(&mp->mnt_vnodelist, vip, vi_mntvnodes);
 	vp->v_usecount = 1;
 	mutex_exit(&mntvnode_lock);
 
-	*vip = (struct vnode_iterator *)vp;
+	*vnip = (struct vnode_iterator *)vip;
 }
 
 void
-vfs_vnode_iterator_destroy(struct vnode_iterator *vi)
+vfs_vnode_iterator_destroy(struct vnode_iterator *vni)
 {
-	struct vnode *mvp = &vi->vi_vnode;
+	vnode_impl_t *mvip = &vni->vi_vnode;
+	vnode_t *mvp = VIMPL_TO_VNODE(mvip);
 
 	mutex_enter(&mntvnode_lock);
 	KASSERT(vnis_marker(mvp));
 	if (mvp->v_usecount != 0) {
-		TAILQ_REMOVE(&mvp->v_mount->mnt_vnodelist, mvp, v_mntvnodes);
+		TAILQ_REMOVE(&mvp->v_mount->mnt_vnodelist, mvip, vi_mntvnodes);
 		mvp->v_usecount = 0;
 	}
 	mutex_exit(&mntvnode_lock);
 	vnfree_marker(mvp);
 }
 
-struct vnode *
-vfs_vnode_iterator_next(struct vnode_iterator *vi,
-    bool (*f)(void *, struct vnode *), void *cl)
+static struct vnode *
+vfs_vnode_iterator_next1(struct vnode_iterator *vni,
+    bool (*f)(void *, struct vnode *), void *cl, bool do_wait)
 {
-	struct vnode *mvp = &vi->vi_vnode;
-	struct mount *mp = mvp->v_mount;
-	struct vnode *vp;
+	vnode_impl_t *mvip = &vni->vi_vnode;
+	struct mount *mp = VIMPL_TO_VNODE(mvip)->v_mount;
+	vnode_t *vp;
+	vnode_impl_t *vip;
 	int error;
 
-	KASSERT(vnis_marker(mvp));
+	KASSERT(vnis_marker(VIMPL_TO_VNODE(mvip)));
 
 	do {
 		mutex_enter(&mntvnode_lock);
-		vp = TAILQ_NEXT(mvp, v_mntvnodes);
-		TAILQ_REMOVE(&mp->mnt_vnodelist, mvp, v_mntvnodes);
-		mvp->v_usecount = 0;
+		vip = TAILQ_NEXT(mvip, vi_mntvnodes);
+		TAILQ_REMOVE(&mp->mnt_vnodelist, mvip, vi_mntvnodes);
+		VIMPL_TO_VNODE(mvip)->v_usecount = 0;
 again:
+		vp = VIMPL_TO_VNODE(vip);
 		if (vp == NULL) {
 	       		mutex_exit(&mntvnode_lock);
 	       		return NULL;
 		}
 		mutex_enter(vp->v_interlock);
 		if (vnis_marker(vp) ||
-		    vdead_check(vp, VDEAD_NOWAIT) ||
+		    vdead_check(vp, (do_wait ? 0 : VDEAD_NOWAIT)) ||
 		    (f && !(*f)(cl, vp))) {
 			mutex_exit(vp->v_interlock);
-			vp = TAILQ_NEXT(vp, v_mntvnodes);
+			vip = TAILQ_NEXT(vip, vi_mntvnodes);
 			goto again;
 		}
 
-		TAILQ_INSERT_AFTER(&mp->mnt_vnodelist, vp, mvp, v_mntvnodes);
-		mvp->v_usecount = 1;
+		TAILQ_INSERT_AFTER(&mp->mnt_vnodelist, vip, mvip, vi_mntvnodes);
+		VIMPL_TO_VNODE(mvip)->v_usecount = 1;
 		mutex_exit(&mntvnode_lock);
-		error = vget(vp, 0, true /* wait */);
+		error = vcache_vget(vp);
 		KASSERT(error == 0 || error == ENOENT);
 	} while (error != 0);
 
 	return vp;
+}
+
+struct vnode *
+vfs_vnode_iterator_next(struct vnode_iterator *vni,
+    bool (*f)(void *, struct vnode *), void *cl)
+{
+
+	return vfs_vnode_iterator_next1(vni, f, cl, false);
 }
 
 /*
@@ -415,6 +433,7 @@ again:
 void
 vfs_insmntque(vnode_t *vp, struct mount *mp)
 {
+	vnode_impl_t *vip = VNODE_TO_VIMPL(vp);
 	struct mount *omp;
 
 	KASSERT(mp == NULL || (mp->mnt_iflag & IMNT_UNMOUNT) == 0 ||
@@ -425,14 +444,14 @@ vfs_insmntque(vnode_t *vp, struct mount *mp)
 	 * Delete from old mount point vnode list, if on one.
 	 */
 	if ((omp = vp->v_mount) != NULL)
-		TAILQ_REMOVE(&vp->v_mount->mnt_vnodelist, vp, v_mntvnodes);
+		TAILQ_REMOVE(&vp->v_mount->mnt_vnodelist, vip, vi_mntvnodes);
 	/*
 	 * Insert into list of vnodes for the new mount point, if
 	 * available.  The caller must take a reference on the mount
 	 * structure and donate to the vnode.
 	 */
 	if ((vp->v_mount = mp) != NULL)
-		TAILQ_INSERT_TAIL(&mp->mnt_vnodelist, vp, v_mntvnodes);
+		TAILQ_INSERT_TAIL(&mp->mnt_vnodelist, vip, vi_mntvnodes);
 	mutex_exit(&mntvnode_lock);
 
 	if (omp != NULL) {
@@ -497,7 +516,7 @@ vflushnext(struct vnode_iterator *marker, void *ctx, int *when)
 		yield();
 		*when = hardclock_ticks + hz / 10;
 	}
-	return vfs_vnode_iterator_next(marker, vflush_selector, ctx);
+	return vfs_vnode_iterator_next1(marker, vflush_selector, ctx, true);
 }
 
 
@@ -506,7 +525,7 @@ vflush(struct mount *mp, vnode_t *skipvp, int flags)
 {
 	vnode_t *vp;
 	struct vnode_iterator *marker;
-	int error, busy = 0, when = 0;
+	int busy = 0, when = 0;
 	struct vflush_ctx ctx;
 
 	/* First, flush out any vnode references from deferred vrele list. */
@@ -540,30 +559,7 @@ vflush(struct mount *mp, vnode_t *skipvp, int flags)
 	if (busy)
 		return (EBUSY);
 
-	/* Wait for all vnodes to be reclaimed. */
-	for (;;) {
-		mutex_enter(&mntvnode_lock);
-		TAILQ_FOREACH(vp, &mp->mnt_vnodelist, v_mntvnodes) {
-			if (vp == skipvp)
-				continue;
-			if ((flags & SKIPSYSTEM) && (vp->v_vflag & VV_SYSTEM))
-				continue;
-			break;
-		}
-		if (vp != NULL) {
-			mutex_enter(vp->v_interlock);
-			mutex_exit(&mntvnode_lock);
-			error = vget(vp, 0, true /* wait */);
-			if (error == ENOENT)
-				continue;
-			else if (error == 0)
-				vrele(vp);
-			return EBUSY;
-		} else {
-			mutex_exit(&mntvnode_lock);
-			return 0;
-		}
-	}
+	return 0;
 }
 
 /*

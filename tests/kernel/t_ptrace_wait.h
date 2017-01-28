@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.h,v 1.3 2016/12/15 08:57:24 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_wait.h,v 1.7 2017/01/09 22:09:20 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2016 The NetBSD Foundation, Inc.
@@ -380,7 +380,12 @@ dsum(unsigned n)
  *
  * Tested with GCC 5.4 on NetBSD 7.99.47 amd64
  */
-static int __used __attribute__((optimize("O0")))
+static int __used
+#ifdef __clang__
+__attribute__((__optnone__))
+#else
+__attribute__((__optimize__("O0")))
+#endif
 check_happy(unsigned n)
 {
 	for (;;) {
@@ -411,12 +416,6 @@ check_happy(unsigned n)
 #define ATF_TP_ADD_TC_HAVE_FPREGS(a,b)	ATF_TP_ADD_TC(a,b)
 #else
 #define ATF_TP_ADD_TC_HAVE_FPREGS(a,b)
-#endif
-
-#if defined(HAVE_DBREGS)
-#define ATF_TP_ADD_TC_HAVE_DBREGS(a,b)	ATF_TP_ADD_TC(a,b)
-#else
-#define ATF_TP_ADD_TC_HAVE_DBREGS(a,b)
 #endif
 
 #if defined(PT_STEP)

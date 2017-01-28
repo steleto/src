@@ -1,4 +1,4 @@
-/*	$NetBSD: ptrace.h,v 1.51 2016/12/15 20:04:36 martin Exp $	*/
+/*	$NetBSD: ptrace.h,v 1.55 2017/01/16 21:35:59 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1984, 1993
@@ -34,6 +34,8 @@
 #ifndef	_SYS_PTRACE_H_
 #define	_SYS_PTRACE_H_
 
+#include <sys/siginfo.h>
+
 #define	PT_TRACE_ME		0	/* child declares it's being traced */
 #define	PT_READ_I		1	/* read word in child's I space */
 #define	PT_READ_D		2	/* read word in child's D space */
@@ -51,6 +53,8 @@
 #define	PT_SET_EVENT_MASK	16	/* set the event mask, defined below */
 #define	PT_GET_EVENT_MASK	17	/* get the event mask, defined below */
 #define	PT_GET_PROCESS_STATE	18	/* get process state, defined below */
+#define	PT_SET_SIGINFO		19	/* set signal state, defined below */
+#define	PT_GET_SIGINFO		20	/* get signal state, defined below */
 
 #define	PT_FIRSTMACH		32	/* for machine-specific requests */
 #include <machine/ptrace.h>		/* machine-specific requests, if any */
@@ -74,7 +78,9 @@
 /* 15 */    "PT_SYSCALLEMU", \
 /* 16 */    "PT_SET_EVENT_MASK", \
 /* 17 */    "PT_GET_EVENT_MASK", \
-/* 18 */    "PT_GET_PROCESS_STATE",
+/* 18 */    "PT_GET_PROCESS_STATE", \
+/* 19 */    "PT_SET_SIGINFO", \
+/* 20 */    "PT_GET_SIGINFO",
 
 /* PT_{G,S}EVENT_MASK */
 typedef struct ptrace_event {
@@ -84,10 +90,20 @@ typedef struct ptrace_event {
 /* PT_GET_PROCESS_STATE */
 typedef struct ptrace_state {
 	int	pe_report_event;
-	pid_t	pe_other_pid;
+	union {
+		pid_t	_pe_other_pid;
+		lwpid_t	_pe_lwp;
+	} _option;
 } ptrace_state_t;
 
-#define	PTRACE_FORK	0x0001	/* Report forks */
+#define	pe_other_pid	_option._pe_other_pid
+#define	pe_lwp		_option._pe_lwp
+
+#define	PTRACE_FORK		0x0001	/* Report forks */
+#define	PTRACE_VFORK		0x0002	/* Report vforks */
+#define	PTRACE_VFORK_DONE	0x0004	/* Report parent resumed from vforks */
+#define	PTRACE_LWP_CREATE	0x0008	/* Report LWP creation */
+#define	PTRACE_LWP_EXIT		0x0010	/* Report LWP termination */
 
 /*
  * Argument structure for PT_IO.
@@ -126,10 +142,21 @@ struct ptrace_lwpinfo {
 typedef struct ptrace_watchpoint {
 	int		pw_index;	/* HW Watchpoint ID (count from 0) */
 	lwpid_t		pw_lwpid;	/* LWP described */
+	int		pw_type;	/* HW Watchpoint type w/ MD content */
 #ifdef __HAVE_PTRACE_WATCHPOINTS
 	struct mdpw	pw_md;		/* MD fields */
 #endif
 } ptrace_watchpoint_t;
+
+/*
+ * Signal Information structure
+ */
+typedef struct ptrace_siginfo {
+	siginfo_t	psi_siginfo;	/* signal information structure */
+	lwpid_t		psi_lwpid;	/* destination LWP of the signal
+					 * value 0 means the whole process
+					 * (route signal to all LWPs) */
+} ptrace_siginfo_t;
 
 #ifdef _KERNEL
 

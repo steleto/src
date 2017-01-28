@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vmx.c,v 1.13 2016/12/15 09:28:04 ozaki-r Exp $	*/
+/*	$NetBSD: if_vmx.c,v 1.18 2017/01/11 00:55:57 maya Exp $	*/
 /*	$OpenBSD: if_vmx.c,v 1.16 2014/01/22 06:04:17 brad Exp $	*/
 
 /*
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.13 2016/12/15 09:28:04 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.18 2017/01/11 00:55:57 maya Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -97,22 +97,16 @@ __KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.13 2016/12/15 09:28:04 ozaki-r Exp $");
 #define VMXNET3_CORE_LOCK(_sc)		mutex_enter((_sc)->vmx_mtx)
 #define VMXNET3_CORE_UNLOCK(_sc)	mutex_exit((_sc)->vmx_mtx)
 #define VMXNET3_CORE_LOCK_ASSERT(_sc)	mutex_owned((_sc)->vmx_mtx)
-#define VMXNET3_CORE_LOCK_ASSERT_NOTOWNED(_sc) \
-    (!mutex_owned((_sc)->vmx_mtx))
 
 #define VMXNET3_RXQ_LOCK(_rxq)		mutex_enter((_rxq)->vxrxq_mtx)
 #define VMXNET3_RXQ_UNLOCK(_rxq)	mutex_exit((_rxq)->vxrxq_mtx)
 #define VMXNET3_RXQ_LOCK_ASSERT(_rxq)		\
     mutex_owned((_rxq)->vxrxq_mtx)
-#define VMXNET3_RXQ_LOCK_ASSERT_NOTOWNED(_rxq)	\
-    (!mutex_owned((_rxq)->vxrxq_mtx))
 
 #define VMXNET3_TXQ_LOCK(_txq)		mutex_enter((_txq)->vxtxq_mtx)
 #define VMXNET3_TXQ_UNLOCK(_txq)	mutex_exit((_txq)->vxtxq_mtx)
 #define VMXNET3_TXQ_LOCK_ASSERT(_txq)		\
     mutex_owned((_txq)->vxtxq_mtx)
-#define VMXNET3_TXQ_LOCK_ASSERT_NOTOWNED(_txq)	\
-    (!mutex_owned((_txq)->vxtxq_mtx))
 
 struct vmxnet3_dma_alloc {
 	bus_addr_t dma_paddr;
@@ -2537,6 +2531,7 @@ vmxnet3_txq_offload_ctx(struct vmxnet3_txqueue *txq, struct mbuf *m,
 		offset = ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN;
 		break;
 	default:
+		m_free(m);
 		return (EINVAL);
 	}
 
@@ -2559,6 +2554,10 @@ vmxnet3_txq_offload_ctx(struct vmxnet3_txqueue *txq, struct mbuf *m,
 
 	*csum_start = *start + csum_off;
 	mp = m_pulldown(m, 0, *csum_start + 2, &offp);
+	if (!mp) {
+		/* m is already freed */
+		return ENOBUFS;
+	}
 
 	if (m->m_pkthdr.csum_flags & (M_CSUM_TSOv4 | M_CSUM_TSOv6)) {
 		struct tcphdr *tcp;
@@ -2666,9 +2665,9 @@ vmxnet3_txq_encap(struct vmxnet3_txqueue *txq, struct mbuf **m0)
 	} else if (m->m_pkthdr.csum_flags & VMXNET3_CSUM_ALL_OFFLOAD) {
 		error = vmxnet3_txq_offload_ctx(txq, m, &start, &csum_start);
 		if (error) {
+			/* m is already freed */
 			txq->vxtxq_stats.vmtxs_offload_failed++;
 			vmxnet3_txq_unload_mbuf(txq, dmap);
-			m_freem(m);
 			*m0 = NULL;
 			return (error);
 		}
@@ -2813,13 +2812,16 @@ vmxnet3_set_rxfilter(struct vmxnet3_softc *sc)
 	 */
 	mode = VMXNET3_RXMODE_BCAST | VMXNET3_RXMODE_UCAST;
 
-	if (ISSET(ifp->if_flags, IFF_PROMISC) || ec->ec_multicnt > 682)
+	if (ISSET(ifp->if_flags, IFF_PROMISC) ||
+	    ec->ec_multicnt > VMXNET3_MULTICAST_MAX)
 		goto allmulti;
 
 	p = sc->vmx_mcast;
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
+			ETHER_UNLOCK(ec);
 			/*
 			 * We must listen to a range of multicast addresses.
 			 * For now, just accept all multicasts, rather than
@@ -2836,6 +2838,7 @@ vmxnet3_set_rxfilter(struct vmxnet3_softc *sc)
 
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	if (ec->ec_multicnt > 0) {
 		SET(mode, VMXNET3_RXMODE_MCAST);

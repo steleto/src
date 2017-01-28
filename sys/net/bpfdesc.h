@@ -1,4 +1,4 @@
-/*	$NetBSD: bpfdesc.h,v 1.38 2013/11/15 00:12:44 rmind Exp $	*/
+/*	$NetBSD: bpfdesc.h,v 1.40 2017/01/24 09:05:28 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 1990, 1991, 1993
@@ -139,10 +139,9 @@ struct bpf_if {
 	u_int bif_dlt;			/* link layer type */
 	u_int bif_hdrlen;		/* length of header (with padding) */
 	struct ifnet *bif_ifp;		/* corresponding interface */
+	void *bif_si;
+	struct mbuf *bif_mbuf_head;
+	struct mbuf *bif_mbuf_tail;
 };
-
-#ifdef _KERNEL
-int	 bpf_setf(struct bpf_d *, struct bpf_program *);
-#endif
 
 #endif /* !_NET_BPFDESC_H_ */

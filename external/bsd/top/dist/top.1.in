@@ -4,7 +4,7 @@
 .nr D @DEFAULT_DELAY@
 .nr L @HAVE_GETOPT_LONG@
 .nr K @ENABLE_KILL@
-.TH TOP 1 Local
+.TH TOP 1 "December 28, 2016"
 .UC 4
 .SH NAME
 top \- display and update information about the top cpu processes
@@ -301,6 +301,11 @@ but usually include:  \*(lqcpu\*(rq, \*(lqres\*(rq, \*(lqsize\*(rq,
 .B P
 Sort by CPU usage.  Shorthand for \*(lqo cpu\*(rq.
 .TP
+.B p
+Display only process with the specified pid (prompt for process id).
+If the pid specified is simply \*(lq-1\*(rq, then all processes are
+displayed.
+.TP
 .B q
 Quit
 .IR top.
@@ -404,7 +409,7 @@ Top supports the use of ANSI color in its output. By default, color is
 available but not used.  The environment variable
 .B TOPCOLORS
 specifies colors to use and conditions for which they should be used.
-At the present time, only numbers in the summay display area can be 
+At the present time, only numbers in the summary display area can be 
 colored. In a future version it will be possible to highlight numbers
 in the process display area as well.  The environment variable is the
 only way to specify color: there is no equivalent command line option.
@@ -449,7 +454,7 @@ You can see a list of color codes recognized by this installation of top
 with the
 .B \-T
 option.  This will also show the current set of tests used for
-color highligting, as specified in the environment.
+color highlighting, as specified in the environment.
 .SH AUTHOR
 William LeFebvre
 .SH ENVIRONMENT

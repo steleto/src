@@ -1,4 +1,4 @@
-/*	$NetBSD: conf.h,v 1.149 2016/12/09 19:13:47 nat Exp $	*/
+/*	$NetBSD: conf.h,v 1.151 2016/12/17 03:46:52 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -134,7 +134,7 @@ devmajor_t cdevsw_lookup_major(const struct cdevsw *);
 #define	nostop		((dev_type_stop((*)))enodev)
 #define	notty		NULL
 #define	nopoll		seltrue
-#define	nommap		((dev_type_mmap((*)))enodev)
+paddr_t	nommap(dev_t, off_t, int);
 #define	nodump		((dev_type_dump((*)))enodev)
 #define	nosize		NULL
 #define	nokqfilter	seltrue_kqfilter
@@ -147,7 +147,6 @@ devmajor_t cdevsw_lookup_major(const struct cdevsw *);
 #define	nullioctl	((dev_type_ioctl((*)))nullop)
 #define	nullstop	((dev_type_stop((*)))nullop)
 #define	nullpoll	((dev_type_poll((*)))nullop)
-#define	nullmmap	((dev_type_mmap((*)))nullop)
 #define	nulldump	((dev_type_dump((*)))nullop)
 #define	nullkqfilter	((dev_type_kqfilter((*)))eopnotsupp)
 #define nulldiscard	((dev_type_discard((*)))nullop)

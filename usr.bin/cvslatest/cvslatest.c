@@ -1,4 +1,4 @@
-/*	$NetBSD: cvslatest.c,v 1.2 2016/01/24 20:14:44 christos Exp $	*/
+/*	$NetBSD: cvslatest.c,v 1.5 2017/01/12 14:27:14 christos Exp $	*/
 
 /*-
  * Copyright (c) 2016 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: cvslatest.c,v 1.2 2016/01/24 20:14:44 christos Exp $");
+__RCSID("$NetBSD: cvslatest.c,v 1.5 2017/01/12 14:27:14 christos Exp $");
 
 /*
  * Find the latest timestamp in a set of CVS trees, by examining the
@@ -67,37 +67,39 @@ printlat(const struct latest *lat)
 }
 
 static void
-getrepo(const char *path, char *repo, size_t maxrepo)
+getrepo(const FTSENT *e, char *repo, size_t maxrepo)
 {
 	FILE *fp;
-	char name[MAXPATHLEN];
+	char name[MAXPATHLEN], ename[MAXPATHLEN];
 	char *ptr;
 
-	snprintf(name, sizeof(name), "%s/Repository", path);
+	snprintf(name, sizeof(name), "%s/Repository", e->fts_accpath);
+	snprintf(ename, sizeof(ename), "%s/Repository", e->fts_path);
 	if ((fp = fopen(name, "r")) == NULL)
-		err(EXIT_FAILURE, "Can't open `%s'", name);
+		err(EXIT_FAILURE, "Can't open `%s'", ename);
 	if (fgets(repo, (int)maxrepo, fp) == NULL)
-		err(EXIT_FAILURE, "Can't read `%s'", name);
+		err(EXIT_FAILURE, "Can't read `%s'", ename);
 	if ((ptr = strchr(repo, '\n')) == NULL)
-		errx(EXIT_FAILURE, "Malformed line in `%s'", name);
+		errx(EXIT_FAILURE, "Malformed line in `%s'", ename);
 	*ptr = '\0';
 	fclose(fp);
 }
 
 static void
-getlatest(const char *path, const char *repo, struct latest *lat)
+getlatest(const FTSENT *e, const char *repo, struct latest *lat)
 {
 	static const char fmt[] = "%a %b %d %H:%M:%S %Y";
-	char name[MAXPATHLEN];
+	char name[MAXPATHLEN], ename[MAXPATHLEN];
 	char entry[MAXPATHLEN * 2];
 	char *fn, *dt, *p;
 	time_t t;
 	struct tm tm;
 	FILE *fp;
 
-	snprintf(name, sizeof(name), "%s/Entries", path);
+	snprintf(name, sizeof(name), "%s/Entries", e->fts_accpath);
+	snprintf(ename, sizeof(ename), "%s/Entries", e->fts_path);
 	if ((fp = fopen(name, "r")) == NULL)
-		err(EXIT_FAILURE, "Can't open `%s'", name);
+		err(EXIT_FAILURE, "Can't open `%s'", ename);
 
 	while (fgets(entry, (int)sizeof(entry), fp) != NULL) {
 		if (entry[0] != '/')
@@ -109,18 +111,19 @@ getlatest(const char *path, const char *repo, struct latest *lat)
 		if ((dt = strtok(NULL, "/")) == NULL)
 			goto mal;
 		if ((p = strptime(dt, fmt, &tm)) == NULL || *p) {
-			warnx("Malformed time `%s' in `%s'", dt, name);
+			warnx("Malformed time `%s' in `%s'", dt, ename);
 			if (!ignore)
 				exit(EXIT_FAILURE);
 		}
+		tm.tm_isdst = 0;	// We are in GMT anyway
 		if ((t = mktime(&tm)) == (time_t)-1)
 			errx(EXIT_FAILURE, "Time conversion `%s' in `%s'",
-			    dt, name);
+			    dt, ename);
 		if (lat->time == 0 || lat->time < t) {
 			lat->time = t;
 			snprintf(lat->path, sizeof(lat->path),
 			    "%s/%s", repo, fn);
-			if (debug)
+			if (debug > 1)
 				printlat(lat);
 		}
 	}
@@ -129,7 +132,7 @@ getlatest(const char *path, const char *repo, struct latest *lat)
 	return;
 			
 mal:
-	errx(EXIT_FAILURE, "Malformed line in `%s'", name);
+	errx(EXIT_FAILURE, "Malformed line in `%s'", ename);
 }
 
 static void
@@ -152,8 +155,8 @@ cvsscan(char **pathv, const char *name, struct latest *lat)
 		if (strcmp(entry->fts_name, name) != 0)
                         continue;
 
-		getrepo(entry->fts_path, repo, sizeof(repo));
-		getlatest(entry->fts_path, repo, lat);
+		getrepo(entry, repo, sizeof(repo));
+		getlatest(entry, repo, lat);
         }
 
         (void)fts_close(dh);
@@ -191,6 +194,9 @@ main(int argc, char *argv[])
 
 	if (argc == optind)
 		usage();
+
+	// So that mktime behaves consistently
+	setenv("TZ", "UTC", 1);
 
 	cvsscan(argv + optind, name, &lat);
 	if (debug)

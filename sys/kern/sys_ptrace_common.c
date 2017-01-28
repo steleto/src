@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.7 2016/12/15 12:04:18 kamil Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.10 2017/01/14 06:36:52 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.7 2016/12/15 12:04:18 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.10 2017/01/14 06:36:52 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -210,6 +210,8 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	case PT_SET_EVENT_MASK:
 	case PT_GET_EVENT_MASK:
 	case PT_GET_PROCESS_STATE:
+	case PT_SET_SIGINFO:
+	case PT_GET_SIGINFO:
 #ifdef __HAVE_PTRACE_MACHDEP
 	PTRACE_MACHDEP_REQUEST_CASES
 #endif
@@ -300,6 +302,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	struct ptrace_event pe;
 	struct ptrace_state ps;
 	struct ptrace_lwpinfo pl;
+	struct ptrace_siginfo psi;
 #ifdef __HAVE_PTRACE_WATCHPOINTS
 	struct ptrace_watchpoint pw;
 #endif
@@ -448,6 +451,8 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	case  PT_SET_EVENT_MASK:
 	case  PT_GET_EVENT_MASK:
 	case  PT_GET_PROCESS_STATE:
+	case  PT_SET_SIGINFO:
+	case  PT_GET_SIGINFO:
 		/*
 		 * You can't do what you want to the process if:
 		 *	(1) It's not being traced at all,
@@ -785,6 +790,10 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		}
 	sendsig:
 		t->p_fpid = 0;
+		t->p_vfpid = 0;
+		t->p_vfpid_done = 0;
+		t->p_lwp_created = 0;
+		t->p_lwp_exited = 0;
 		/* Finally, deliver the requested signal (or none). */
 		if (t->p_stat == SSTOP) {
 			/*
@@ -797,6 +806,16 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 				proc_unstop(t);
 			else
 				lwp_unstop(lt);
+		} else if (t->p_sigctx.ps_faked) {
+			if (signo != t->p_sigctx.ps_info._signo) {
+				error = EINVAL;
+				break;
+			}
+			t->p_sigctx.ps_faked = false;
+			KSI_INIT_EMPTY(&ksi);
+			ksi.ksi_info = t->p_sigctx.ps_info;
+			ksi.ksi_lid = t->p_sigctx.ps_lwp;
+			kpsignal2(t, &ksi);
 		} else if (signo != 0) {
 			KSI_INIT_EMPTY(&ksi);
 			ksi.ksi_signo = signo;
@@ -840,6 +859,14 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		memset(&pe, 0, sizeof(pe));
 		pe.pe_set_event = ISSET(t->p_slflag, PSL_TRACEFORK) ?
 		    PTRACE_FORK : 0;
+		pe.pe_set_event |= ISSET(t->p_slflag, PSL_TRACEVFORK) ?
+		    PTRACE_VFORK : 0;
+		pe.pe_set_event |= ISSET(t->p_slflag, PSL_TRACEVFORK_DONE) ?
+		    PTRACE_VFORK_DONE : 0;
+		pe.pe_set_event |= ISSET(t->p_slflag, PSL_TRACELWP_CREATE) ?
+		    PTRACE_LWP_CREATE : 0;
+		pe.pe_set_event |= ISSET(t->p_slflag, PSL_TRACELWP_EXIT) ?
+		    PTRACE_LWP_EXIT : 0;
 		error = copyout(&pe, addr, sizeof(pe));
 		break;
 
@@ -856,6 +883,29 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 			SET(t->p_slflag, PSL_TRACEFORK);
 		else
 			CLR(t->p_slflag, PSL_TRACEFORK);
+#if notyet
+		if (pe.pe_set_event & PTRACE_VFORK)
+			SET(t->p_slflag, PSL_TRACEVFORK);
+		else
+			CLR(t->p_slflag, PSL_TRACEVFORK);
+#else
+		if (pe.pe_set_event & PTRACE_VFORK) {
+			error = ENOTSUP;
+			break;
+		}
+#endif
+		if (pe.pe_set_event & PTRACE_VFORK_DONE)
+			SET(t->p_slflag, PSL_TRACEVFORK_DONE);
+		else
+			CLR(t->p_slflag, PSL_TRACEVFORK_DONE);
+		if (pe.pe_set_event & PTRACE_LWP_CREATE)
+			SET(t->p_slflag, PSL_TRACELWP_CREATE);
+		else
+			CLR(t->p_slflag, PSL_TRACELWP_CREATE);
+		if (pe.pe_set_event & PTRACE_LWP_EXIT)
+			SET(t->p_slflag, PSL_TRACELWP_EXIT);
+		else
+			CLR(t->p_slflag, PSL_TRACELWP_EXIT);
 		break;
 
 	case  PT_GET_PROCESS_STATE:
@@ -869,6 +919,18 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		if (t->p_fpid) {
 			ps.pe_report_event = PTRACE_FORK;
 			ps.pe_other_pid = t->p_fpid;
+		} else if (t->p_vfpid) {
+			ps.pe_report_event = PTRACE_VFORK;
+			ps.pe_other_pid = t->p_vfpid;
+		} else if (t->p_vfpid_done) {
+			ps.pe_report_event = PTRACE_VFORK_DONE;
+			ps.pe_other_pid = t->p_vfpid_done;
+		} else if (t->p_lwp_created) {
+			ps.pe_report_event = PTRACE_LWP_CREATE;
+			ps.pe_lwp = t->p_lwp_created;
+		} else if (t->p_lwp_exited) {
+			ps.pe_report_event = PTRACE_LWP_EXIT;
+			ps.pe_lwp = t->p_lwp_exited;
 		}
 		error = copyout(&ps, addr, sizeof(ps));
 		break;
@@ -911,12 +973,72 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 			 * check ps_signo too.
 			 */
 			if (lt->l_lid == t->p_sigctx.ps_lwp
-			    || (t->p_sigctx.ps_lwp == 0 && t->p_sigctx.ps_signo))
+			    || (t->p_sigctx.ps_lwp == 0 &&
+			        t->p_sigctx.ps_info._signo))
 				pl.pl_event = PL_EVENT_SIGNAL;
 		}
 		mutex_exit(t->p_lock);
 
 		error = copyout(&pl, addr, sizeof(pl));
+		break;
+
+	case  PT_SET_SIGINFO:
+		if (data != sizeof(psi)) {
+			DPRINTF(("ptrace(%d): %d != %zu\n", req, data,
+			    sizeof(psi)));
+			error = EINVAL;
+			break;
+		}
+
+		error = copyin(addr, &psi, sizeof(psi));
+		if (error)
+			break;
+
+		/* Check that the data is a valid signal number or zero. */
+		if (psi.psi_siginfo.si_signo < 0 ||
+		    psi.psi_siginfo.si_signo >= NSIG) {
+			error = EINVAL;
+			break;
+		}
+
+		tmp = psi.psi_lwpid;
+		if (tmp != 0)
+			lwp_delref(lt);
+
+		mutex_enter(t->p_lock);
+
+		if (tmp != 0) {
+			lt = lwp_find(t, tmp);
+			if (lt == NULL) {
+				mutex_exit(t->p_lock);
+				error = ESRCH;
+				break;
+			}
+			lwp_addref(lt);
+		}
+
+		t->p_sigctx.ps_faked = true;
+		t->p_sigctx.ps_info = psi.psi_siginfo._info;
+		t->p_sigctx.ps_lwp = psi.psi_lwpid;
+		mutex_exit(t->p_lock);
+		break;
+
+	case  PT_GET_SIGINFO:
+		if (data != sizeof(psi)) {
+			DPRINTF(("ptrace(%d): %d != %zu\n", req, data,
+			    sizeof(psi)));
+			error = EINVAL;
+			break;
+		}
+		mutex_enter(t->p_lock);
+		psi.psi_siginfo._info = t->p_sigctx.ps_info;
+		psi.psi_lwpid = t->p_sigctx.ps_lwp;
+		mutex_exit(t->p_lock);
+
+		error = copyout(&psi, addr, sizeof(psi));
+		if (error)
+			break;
+
 		break;
 
 #ifdef PT_SETREGS

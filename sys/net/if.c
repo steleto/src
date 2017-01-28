@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.368 2016/12/15 09:28:06 ozaki-r Exp $	*/
+/*	$NetBSD: if.c,v 1.374 2017/01/24 07:58:58 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.368 2016/12/15 09:28:06 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.374 2017/01/24 07:58:58 ozaki-r Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -194,7 +194,7 @@ static LIST_HEAD(, if_clone) if_cloners = LIST_HEAD_INITIALIZER(if_cloners);
 static int if_cloners_count;
 
 /* Packet filtering hook for interfaces. */
-pfil_head_t *	if_pfil;
+pfil_head_t *			if_pfil __read_mostly;
 
 static kauth_listener_t if_listener;
 
@@ -237,6 +237,8 @@ static void if_deferred_start_destroy(struct ifnet *);
 #if defined(INET) || defined(INET6)
 static void sysctl_net_pktq_setup(struct sysctllog **, int);
 #endif
+
+static void if_sysctl_setup(struct sysctllog **);
 
 /*
  * Pointer to stub or real compat_cvtcmd() depending on presence of
@@ -286,13 +288,8 @@ if_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 void
 ifinit(void)
 {
-#if defined(INET)
-	sysctl_net_pktq_setup(NULL, PF_INET);
-#endif
-#ifdef INET6
-	if (in6_present)
-		sysctl_net_pktq_setup(NULL, PF_INET6);
-#endif
+
+	if_sysctl_setup(NULL);
 
 #if (defined(INET) || defined(INET6)) && !defined(IPSEC)
 	encapinit();
@@ -529,7 +526,7 @@ if_activate_sadl(struct ifnet *ifp, struct ifaddr *ifa0,
 	struct ifaddr *ifa;
 	int bound = curlwp_bind();
 
-	s = splnet();
+	s = splsoftnet();
 
 	if_deactivate_sadl(ifp);
 
@@ -570,7 +567,7 @@ if_free_sadl(struct ifnet *ifp)
 
 	KASSERT(ifp->if_sadl != NULL);
 
-	s = splnet();
+	s = splsoftnet();
 	rtinit(ifa, RTM_DELETE, 0);
 	ifa_remove(ifp, ifa);
 	if_deactivate_sadl(ifp);
@@ -690,8 +687,7 @@ if_initialize(ifnet_t *ifp)
 	IFQ_LOCK_INIT(&ifp->if_snd);
 
 	ifp->if_pfil = pfil_head_create(PFIL_TYPE_IFNET, ifp);
-	(void)pfil_run_hooks(if_pfil,
-	    (struct mbuf **)PFIL_IFNET_ATTACH, ifp, PFIL_IFNET);
+	pfil_run_ifhooks(if_pfil, PFIL_IFNET_ATTACH, ifp);
 
 	IF_AFDATA_LOCK_INIT(ifp);
 
@@ -1130,7 +1126,7 @@ if_attachdomain1(struct ifnet *ifp)
 	struct domain *dp;
 	int s;
 
-	s = splnet();
+	s = splsoftnet();
 
 	/* address family dependent data region */
 	memset(ifp->if_afdata, 0, sizeof(ifp->if_afdata));
@@ -1152,7 +1148,7 @@ if_deactivate(struct ifnet *ifp)
 {
 	int s;
 
-	s = splnet();
+	s = splsoftnet();
 
 	ifp->if_output	 = if_nulloutput;
 	ifp->_if_input	 = if_nullinput;
@@ -1433,8 +1429,7 @@ again:
 		}
 	}
 
-	(void)pfil_run_hooks(if_pfil,
-	    (struct mbuf **)PFIL_IFNET_DETACH, ifp, PFIL_IFNET);
+	pfil_run_ifhooks(if_pfil, PFIL_IFNET_DETACH, ifp);
 	(void)pfil_head_destroy(ifp->if_pfil);
 
 	/* Announce that the interface is gone. */
@@ -1542,6 +1537,8 @@ if_clone_create(const char *name)
 	struct ifnet *ifp;
 	struct psref psref;
 
+	KASSERT(mutex_owned(&if_clone_mtx));
+
 	ifc = if_clone_lookup(name, &unit);
 	if (ifc == NULL)
 		return EINVAL;
@@ -1564,6 +1561,8 @@ if_clone_destroy(const char *name)
 	struct if_clone *ifc;
 	struct ifnet *ifp;
 	struct psref psref;
+
+	KASSERT(mutex_owned(&if_clone_mtx));
 
 	ifc = if_clone_lookup(name, NULL);
 	if (ifc == NULL)
@@ -1600,6 +1599,8 @@ if_clone_lookup(const char *name, int *unitp)
 	const char *cp;
 	char *dp, ifname[IFNAMSIZ + 3];
 	int unit;
+
+	KASSERT(mutex_owned(&if_clone_mtx));
 
 	strcpy(ifname, "if_");
 	/* separate interface name from unit */
@@ -1646,8 +1647,10 @@ void
 if_clone_attach(struct if_clone *ifc)
 {
 
+	mutex_enter(&if_clone_mtx);
 	LIST_INSERT_HEAD(&if_cloners, ifc, ifc_list);
 	if_cloners_count++;
+	mutex_exit(&if_clone_mtx);
 }
 
 /*
@@ -1657,6 +1660,7 @@ void
 if_clone_detach(struct if_clone *ifc)
 {
 
+	KASSERT(mutex_owned(&if_clone_mtx));
 	LIST_REMOVE(ifc, ifc_list);
 	if_cloners_count--;
 }
@@ -1671,14 +1675,17 @@ if_clone_list(int buf_count, char *buffer, int *total)
 	struct if_clone *ifc;
 	int count, error = 0;
 
+	mutex_enter(&if_clone_mtx);
 	*total = if_cloners_count;
 	if ((dst = buffer) == NULL) {
 		/* Just asking how many there are. */
-		return 0;
+		goto out;
 	}
 
-	if (buf_count < 0)
-		return EINVAL;
+	if (buf_count < 0) {
+		error = EINVAL;
+		goto out;
+	}
 
 	count = (if_cloners_count < buf_count) ?
 	    if_cloners_count : buf_count;
@@ -1686,13 +1693,17 @@ if_clone_list(int buf_count, char *buffer, int *total)
 	for (ifc = LIST_FIRST(&if_cloners); ifc != NULL && count != 0;
 	     ifc = LIST_NEXT(ifc, ifc_list), count--, dst += IFNAMSIZ) {
 		(void)strncpy(outbuf, ifc->ifc_name, sizeof(outbuf));
-		if (outbuf[sizeof(outbuf) - 1] != '\0')
-			return ENAMETOOLONG;
+		if (outbuf[sizeof(outbuf) - 1] != '\0') {
+			error = ENAMETOOLONG;
+			goto out;
+		}
 		error = copyout(outbuf, dst, sizeof(outbuf));
 		if (error != 0)
 			break;
 	}
 
+out:
+	mutex_exit(&if_clone_mtx);
 	return error;
 }
 
@@ -2277,6 +2288,10 @@ if_link_state_change_si(void *arg)
 	int s;
 	uint8_t state;
 
+#ifndef NET_MPSAFE
+	mutex_enter(softnet_lock);
+	KERNEL_LOCK(1, NULL);
+#endif
 	s = splnet();
 
 	/* Pop a link state change from the queue and process it. */
@@ -2288,6 +2303,10 @@ if_link_state_change_si(void *arg)
 		softint_schedule(ifp->if_link_si);
 
 	splx(s);
+#ifndef NET_MPSAFE
+	KERNEL_UNLOCK_ONE(NULL);
+	mutex_exit(softnet_lock);
+#endif
 }
 
 /*
@@ -2701,12 +2720,12 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 	case SIOCSIFFLAGS:
 		ifr = data;
 		if (ifp->if_flags & IFF_UP && (ifr->ifr_flags & IFF_UP) == 0) {
-			s = splnet();
+			s = splsoftnet();
 			if_down(ifp);
 			splx(s);
 		}
 		if (ifr->ifr_flags & IFF_UP && (ifp->if_flags & IFF_UP) == 0) {
-			s = splnet();
+			s = splsoftnet();
 			if_up(ifp);
 			splx(s);
 		}
@@ -3007,7 +3026,7 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 
 	if (((oif_flags ^ ifp->if_flags) & IFF_UP) != 0) {
 		if ((ifp->if_flags & IFF_UP) != 0) {
-			int s = splnet();
+			int s = splsoftnet();
 			if_up(ifp);
 			splx(s);
 		}
@@ -3557,7 +3576,8 @@ out0:
 	return error;
 }
 
-SYSCTL_SETUP(sysctl_net_sdl_setup, "sysctl net.sdl subtree setup")
+static void
+if_sysctl_setup(struct sysctllog **clog)
 {
 	const struct sysctlnode *rnode = NULL;
 
@@ -3567,4 +3587,12 @@ SYSCTL_SETUP(sysctl_net_sdl_setup, "sysctl net.sdl subtree setup")
 		       SYSCTL_DESCR("Get active link-layer address"),
 		       if_sdl_sysctl, 0, NULL, 0,
 		       CTL_NET, CTL_CREATE, CTL_EOL);
+
+#if defined(INET)
+	sysctl_net_pktq_setup(NULL, PF_INET);
+#endif
+#ifdef INET6
+	if (in6_present)
+		sysctl_net_pktq_setup(NULL, PF_INET6);
+#endif
 }

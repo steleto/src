@@ -1,4 +1,4 @@
-$NetBSD: TODO.ptrace,v 1.4 2016/12/15 12:42:38 kamil Exp $
+$NetBSD: TODO.ptrace,v 1.11 2017/01/14 01:36:28 kamil Exp $
 
 Items we (currently) plan to finish in the ptrace(2) field:
 
@@ -9,19 +9,19 @@ Items we (currently) plan to finish in the ptrace(2) field:
  - add PT_DUMPCORE tests in the ATF framework
  - add ATF tests for PT_WRITE_I and PIOD_WRITE_I - test mprotect restrictions
  - add ATF tests for PIOD_READ_AUXV
- - document all MD specific ptrace(2) interfaces
-   (PT_GETXMMREGS, PT_SETXMMREGS, ...)
+ - once the API for hardware watchpoints will stabilize, document it
  - add tests for the procfs interface covering all functions available on the
    same level as ptrace(2)
  - add support for PT_STEP, PT_GETREGS, PT_SETREGS, PT_GETFPREGS, PT_SETFPREGS
    in all ports
  - integrate all ptrace(2) features in gdb
  - add ptrace(2) NetBSD support in LLDB
- - add support for detecting equivalent events to PTRACE_O_TRACEEXEC,
-   PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXIT from Linux
- - exect(3) rething or remove -- maybe PT_TRACE_ME + PTRACE_O_TRACEEXEC?
+ - add proper implementation of PTRACE_VFORK for vfork(2)-like events
+ - remove exect(3) - there is no usecase for it
  - refactor pthread_dbg(3) to only query private pthread_t data, otherwise it
    duplicates ptrace(2) interface and cannot cover all types of threads
+ - add ATF tests for SIGCHLD
+ - add ATF tests for PT_SYSCALL and PT_SYSCALLEMU
 
 and of course: fix as many bugs as possible.
 

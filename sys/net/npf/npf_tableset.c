@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_tableset.c,v 1.24 2016/12/09 02:40:38 christos Exp $	*/
+/*	$NetBSD: npf_tableset.c,v 1.26 2017/01/02 21:49:51 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2009-2016 The NetBSD Foundation, Inc.
@@ -40,8 +40,9 @@
  *	entries are protected by a read-write lock.
  */
 
+#ifdef _KERNEL
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_tableset.c,v 1.24 2016/12/09 02:40:38 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_tableset.c,v 1.26 2017/01/02 21:49:51 rmind Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -57,8 +58,10 @@ __KERNEL_RCSID(0, "$NetBSD: npf_tableset.c,v 1.24 2016/12/09 02:40:38 christos E
 #include <sys/systm.h>
 #include <sys/types.h>
 
-#include "npf_impl.h"
 #include "lpm.h"
+#endif
+
+#include "npf_impl.h"
 
 typedef struct npf_tblent {
 	LIST_ENTRY(npf_tblent)	te_listent;
@@ -180,6 +183,21 @@ npf_tableset_insert(npf_tableset_t *ts, npf_table_t *t)
 	return error;
 }
 
+npf_table_t *
+npf_tableset_swap(npf_tableset_t *ts, npf_table_t *newt)
+{
+	const u_int tid = newt->t_id;
+	npf_table_t *oldt = ts->ts_map[tid];
+
+	KASSERT(tid < ts->ts_nitems);
+	KASSERT(oldt->t_id == newt->t_id);
+
+	newt->t_refcnt = oldt->t_refcnt;
+	oldt->t_refcnt = 0;
+
+	return atomic_swap_ptr(&ts->ts_map[tid], newt);
+}
+
 /*
  * npf_tableset_getbyname: look for a table in the set given the name.
  */
@@ -213,7 +231,7 @@ npf_tableset_getbyid(npf_tableset_t *ts, u_int tid)
  * => The caller is responsible for providing synchronisation.
  */
 void
-npf_tableset_reload(npf_tableset_t *nts, npf_tableset_t *ots)
+npf_tableset_reload(npf_t *npf, npf_tableset_t *nts, npf_tableset_t *ots)
 {
 	for (u_int tid = 0; tid < nts->ts_nitems; tid++) {
 		npf_table_t *t, *ot;
@@ -247,7 +265,7 @@ npf_tableset_reload(npf_tableset_t *nts, npf_tableset_t *ots)
 		atomic_inc_uint(&ot->t_refcnt);
 		nts->ts_map[tid] = ot;
 
-		KASSERT(npf_config_locked_p());
+		KASSERT(npf_config_locked_p(npf));
 		ot->t_id = tid;
 
 		/* Destroy the new table (we hold the only reference). */
@@ -257,11 +275,11 @@ npf_tableset_reload(npf_tableset_t *nts, npf_tableset_t *ots)
 }
 
 int
-npf_tableset_export(const npf_tableset_t *ts, prop_array_t tables)
+npf_tableset_export(npf_t *npf, const npf_tableset_t *ts, prop_array_t tables)
 {
 	const npf_table_t *t;
 
-	KASSERT(npf_config_locked_p());
+	KASSERT(npf_config_locked_p(npf));
 
 	for (u_int tid = 0; tid < ts->ts_nitems; tid++) {
 		if ((t = ts->ts_map[tid]) == NULL) {
@@ -340,19 +358,22 @@ npf_table_create(const char *name, u_int tid, int type,
 {
 	npf_table_t *t;
 
-	t = kmem_zalloc(sizeof(*t), KM_SLEEP);
+	t = kmem_zalloc(sizeof(npf_table_t), KM_SLEEP);
 	strlcpy(t->t_name, name, NPF_TABLE_MAXNAMELEN);
 
 	switch (type) {
 	case NPF_TABLE_TREE:
-		if ((t->t_lpm = lpm_create()) == NULL)
+		if ((t->t_lpm = lpm_create()) == NULL) {
 			goto out;
+		}
 		LIST_INIT(&t->t_list);
 		break;
 	case NPF_TABLE_HASH:
-		t->t_hashl = hashinit(1024, HASH_LIST, true, &t->t_hashmask);
-		if (t->t_hashl == NULL)
+		size = MIN(size, 128);
+		t->t_hashl = hashinit(size, HASH_LIST, true, &t->t_hashmask);
+		if (t->t_hashl == NULL) {
 			goto out;
+		}
 		break;
 	case NPF_TABLE_CDB:
 		t->t_blob = blob;
@@ -370,12 +391,10 @@ npf_table_create(const char *name, u_int tid, int type,
 	rw_init(&t->t_lock);
 	t->t_type = type;
 	t->t_id = tid;
-
 	return t;
 out:
-	kmem_free(t, sizeof(*t));
+	kmem_free(t, sizeof(npf_table_t));
 	return NULL;
-	
 }
 
 /*
@@ -403,7 +422,13 @@ npf_table_destroy(npf_table_t *t)
 		KASSERT(false);
 	}
 	rw_destroy(&t->t_lock);
-	kmem_free(t, sizeof(*t));
+	kmem_free(t, sizeof(npf_table_t));
+}
+
+u_int
+npf_table_getid(npf_table_t *t)
+{
+	return t->t_id;
 }
 
 /*
@@ -609,7 +634,8 @@ npf_table_lookup(npf_table_t *t, const int alen, const npf_addr_t *addr)
 		break;
 	case NPF_TABLE_CDB:
 		if (cdbr_find(t->t_cdb, addr, alen, &data, &dlen) == 0) {
-			found = dlen == alen && memcmp(addr, data, dlen) == 0;
+			found = dlen == (u_int)alen &&
+			    memcmp(addr, data, dlen) == 0;
 		} else {
 			found = false;
 		}

@@ -1,4 +1,4 @@
-/* $NetBSD: ultrix_syscall.h,v 1.65 2015/09/24 14:44:44 christos Exp $ */
+/* $NetBSD: ultrix_syscall.h,v 1.67 2017/01/16 17:43:05 christos Exp $ */
 
 /*
  * System call numbers.

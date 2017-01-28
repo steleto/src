@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.11 2016/02/01 14:17:21 christos Exp $
+#	$NetBSD: Makefile,v 1.13 2017/01/06 20:27:19 christos Exp $
 
 NOMAN=	# defined
 
@@ -14,8 +14,14 @@ IBERTYDIR=	${TOOLCHAINOBJ}/build/libiberty
 
 .include "${.CURDIR}/../Makefile.host"
 
-LIBDL!=		grep -- -ldl ${TOOLCHAINOBJ}/build/ld/Makefile || echo no
 
-.if ${LIBDL} != "no"
+LDMAKEFILE=${TOOLCHAINOBJ}/build/ld/Makefile
+.if exists(${LDMAKEFILE})
+HAVE_LIBDL!=	grep -- -ldl ${LDMAKEFILE} || echo no
+.else
+HAVE_LIBDL=	no
+.endif
+
+.if ${HAVE_LIBDL} != "no"
 LDADD+=	-ldl
 .endif

@@ -1,27 +1,30 @@
-# $NetBSD: ad.powerpc,v 1.84 2016/03/18 03:08:25 mrg Exp $
+# $NetBSD: ad.powerpc,v 1.86 2017/01/11 12:02:24 joerg Exp $
 ./usr/bin/elf2aout				comp-sysutil-bin
 ./usr/bin/psim					comp-debug-bin		gdb
 ./usr/include/altivec.h				comp-obsolete		obsolete
 ./usr/include/clang-3.4/altivec.h		comp-obsolete		obsolete
 ./usr/include/clang-3.5/altivec.h		comp-obsolete		obsolete
 ./usr/include/clang-3.6/altivec.h		comp-obsolete		obsolete
-./usr/include/clang-3.8/altivec.h		comp-c-include		llvm
-./usr/include/clang-3.8/htmintrin.h		comp-c-include		llvm
-./usr/include/clang-3.8/htmxlintrin.h		comp-c-include		llvm
+./usr/include/clang-3.8/altivec.h		comp-obsolete		obsolete
+./usr/include/clang-3.8/htmintrin.h		comp-obsolete		obsolete
+./usr/include/clang-3.8/htmxlintrin.h		comp-obsolete		obsolete
+./usr/include/clang-4.0/altivec.h		comp-c-include		llvm
+./usr/include/clang-4.0/htmintrin.h		comp-c-include		llvm
+./usr/include/clang-4.0/htmxlintrin.h		comp-c-include		llvm
 ./usr/include/g++/bits/powerpc			comp-c-include		compat
 ./usr/include/g++/bits/powerpc/c++config.h	comp-c-include		compat,gcc
 ./usr/include/g++/bits/powerpc64		comp-c-include		compat
 ./usr/include/g++/bits/powerpc64/c++config.h	comp-c-include		compat,gcc
 ./usr/include/gcc-4.1/altivec.h			comp-obsolete		obsolete
-./usr/include/gcc-4.5/altivec.h			comp-c-include		obsolete
-./usr/include/gcc-4.5/paired.h			comp-c-include		obsolete
-./usr/include/gcc-4.5/ppc-asm.h			comp-c-include		obsolete
-./usr/include/gcc-4.5/ppu_intrinsics.h		comp-c-include		obsolete
-./usr/include/gcc-4.5/si2vmx.h			comp-c-include		obsolete
-./usr/include/gcc-4.5/spe.h			comp-c-include		obsolete
-./usr/include/gcc-4.5/spu2vmx.h			comp-c-include		obsolete
-./usr/include/gcc-4.5/tgmath.h			comp-c-include		obsolete
-./usr/include/gcc-4.5/vec_types.h		comp-c-include		obsolete
+./usr/include/gcc-4.5/altivec.h			comp-obsolete		obsolete
+./usr/include/gcc-4.5/paired.h			comp-obsolete		obsolete
+./usr/include/gcc-4.5/ppc-asm.h			comp-obsolete		obsolete
+./usr/include/gcc-4.5/ppu_intrinsics.h		comp-obsolete		obsolete
+./usr/include/gcc-4.5/si2vmx.h			comp-obsolete		obsolete
+./usr/include/gcc-4.5/spe.h			comp-obsolete		obsolete
+./usr/include/gcc-4.5/spu2vmx.h			comp-obsolete		obsolete
+./usr/include/gcc-4.5/tgmath.h			comp-obsolete		obsolete
+./usr/include/gcc-4.5/vec_types.h		comp-obsolete		obsolete
 ./usr/include/gcc-4.8/altivec.h			comp-c-include		gcccmds,gcc=48
 ./usr/include/gcc-4.8/htmintrin.h		comp-c-include		gcccmds,gcc=48
 ./usr/include/gcc-4.8/htmxlintrin.h		comp-c-include		gcccmds,gcc=48

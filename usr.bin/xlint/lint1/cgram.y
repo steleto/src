@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.81 2016/11/05 01:09:30 christos Exp $ */
+/* $NetBSD: cgram.y,v 1.92 2017/01/07 18:28:49 christos Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.81 2016/11/05 01:09:30 christos Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.92 2017/01/07 18:28:49 christos Exp $");
 #endif
 
 #include <stdlib.h>
@@ -117,7 +117,7 @@ anonymize(sym_t *s)
 }
 %}
 
-%expect 88
+%expect 100
 
 %union {
 	int	y_int;
@@ -198,26 +198,39 @@ anonymize(sym_t *s)
 %token			T_PACKED
 /* Type Attributes */
 %token <y_type>		T_ATTRIBUTE
+%token <y_type>		T_AT_ALIAS
 %token <y_type>		T_AT_ALIGNED
+%token <y_type>		T_AT_ALWAYS_INLINE
+%token <y_type>		T_AT_BOUNDED
+%token <y_type>		T_AT_BUFFER
+%token <y_type>		T_AT_COLD
+%token <y_type>		T_AT_CONSTRUCTOR
 %token <y_type>		T_AT_DEPRECATED
-%token <y_type>		T_AT_NORETURN
-%token <y_type>		T_AT_GNU_INLINE
-%token <y_type>		T_AT_MAY_ALIAS
-%token <y_type>		T_AT_PACKED
-%token <y_type>		T_AT_PURE
-%token <y_type>		T_AT_TUINION
-%token <y_type>		T_AT_TUNION
-%token <y_type>		T_AT_UNUSED
-%token <y_type>		T_AT_WEAK
-%token <y_type>		T_AT_VISIBILITY
 %token <y_type>		T_AT_FORMAT
+%token <y_type>		T_AT_FORMAT_ARG
 %token <y_type>		T_AT_FORMAT_PRINTF
 %token <y_type>		T_AT_FORMAT_SCANF
+%token <y_type>		T_AT_FORMAT_STRFMON
 %token <y_type>		T_AT_FORMAT_STRFTIME
-%token <y_type>		T_AT_FORMAT_ARG
-%token <y_type>		T_AT_SENTINEL
+%token <y_type>		T_AT_GNU_INLINE
+%token <y_type>		T_AT_MAY_ALIAS
+%token <y_type>		T_AT_MINBYTES
+%token <y_type>		T_AT_MODE
+%token <y_type>		T_AT_NONNULL
+%token <y_type>		T_AT_NORETURN
+%token <y_type>		T_AT_NO_INSTRUMENT_FUNCTION
+%token <y_type>		T_AT_PACKED
+%token <y_type>		T_AT_PCS
+%token <y_type>		T_AT_PURE
 %token <y_type>		T_AT_RETURNS_TWICE
-%token <y_type>		T_AT_COLD
+%token <y_type>		T_AT_SECTION
+%token <y_type>		T_AT_SENTINEL
+%token <y_type>		T_AT_STRING
+%token <y_type>		T_AT_TUNION
+%token <y_type>		T_AT_UNUSED
+%token <y_type>		T_AT_USED
+%token <y_type>		T_AT_VISIBILITY
+%token <y_type>		T_AT_WEAK
 
 %left	T_COMMA
 %right	T_ASSIGN T_OPASS
@@ -249,7 +262,6 @@ anonymize(sym_t *s)
 %type	<y_type>	struct_spec
 %type	<y_type>	enum_spec
 %type	<y_type>	type_attribute
-%type	<y_type>	type_attribute_spec
 %type	<y_sym>		struct_tag
 %type	<y_sym>		enum_tag
 %type	<y_tspec>	struct
@@ -496,15 +508,33 @@ declaration:
 type_attribute_format_type:
 	  T_AT_FORMAT_PRINTF
 	| T_AT_FORMAT_SCANF
+	| T_AT_FORMAT_STRFMON
 	| T_AT_FORMAT_STRFTIME
 	;
 
+type_attribute_bounded_type:
+	  T_AT_MINBYTES
+	| T_AT_STRING
+	| T_AT_BUFFER
+	;
+
 type_attribute_spec:
-	  T_AT_DEPRECATED
+	  /* empty */	
+	| T_AT_DEPRECATED
 	| T_AT_ALIGNED T_LPARN constant T_RPARN
+	| T_AT_BOUNDED T_LPARN type_attribute_bounded_type
+	  T_COMMA constant T_COMMA constant T_RPARN
 	| T_AT_SENTINEL T_LPARN constant T_RPARN
 	| T_AT_FORMAT_ARG T_LPARN constant T_RPARN
+	| T_AT_NONNULL T_LPARN constant T_RPARN
+	| T_AT_MODE T_LPARN T_NAME T_RPARN
+	| T_AT_ALIAS T_LPARN string T_RPARN
+	| T_AT_PCS T_LPARN string T_RPARN
+	| T_AT_SECTION T_LPARN string T_RPARN
+	| T_AT_ALIGNED 
+	| T_AT_CONSTRUCTOR 
 	| T_AT_MAY_ALIAS
+	| T_AT_NO_INSTRUMENT_FUNCTION
 	| T_AT_NORETURN
 	| T_AT_COLD
 	| T_AT_RETURNS_TWICE
@@ -514,9 +544,15 @@ type_attribute_spec:
 	| T_AT_PURE
 	| T_AT_TUNION
 	| T_AT_GNU_INLINE
+	| T_AT_ALWAYS_INLINE
 	| T_AT_FORMAT T_LPARN type_attribute_format_type T_COMMA
 	    constant T_COMMA constant T_RPARN
-	| T_AT_UNUSED
+	| T_AT_USED {
+		addused();
+	}
+	| T_AT_UNUSED {
+		addused();
+	}
 	| T_AT_WEAK
 	| T_AT_VISIBILITY T_LPARN constant T_RPARN
 	| T_QUAL {
@@ -525,15 +561,25 @@ type_attribute_spec:
 	}
 	;
 
+type_attribute_spec_list:
+	  type_attribute_spec
+	| type_attribute_spec_list T_COMMA type_attribute_spec
+	;
+
 type_attribute:
 	  T_ATTRIBUTE T_LPARN T_LPARN {
 	    attron = 1;
-	} type_attribute_spec {
+	} type_attribute_spec_list {
 	    attron = 0;
 	} T_RPARN T_RPARN
 	| T_PACKED {
 		addpacked();
 	}
+	;
+
+type_attribute_list:
+	  type_attribute
+	| type_attribute_list type_attribute
 	;
 
 clrtyp:
@@ -579,7 +625,7 @@ declmod:
 	| T_SCLASS {
 		addscl($1);
 	  }
-	| type_attribute
+	| type_attribute_list
 	;
 
 clrtyp_typespec:
@@ -692,6 +738,11 @@ member_declaration_list_with_rbrace:
 	  }
 	;
 
+opt_type_attribute:
+	  /* empty */
+	| type_attribute
+	;
+
 member_declaration_list:
 	  member_declaration {
 		$$ = $1;
@@ -705,17 +756,17 @@ member_declaration:
 	  noclass_declmods deftyp {
 		/* too late, i know, but getsym() compensates it */
 		symtyp = FMOS;
-	  } notype_member_decls {
+	  } notype_member_decls opt_type_attribute {
 		symtyp = FVFT;
 		$$ = $4;
 	  }
 	| noclass_declspecs deftyp {
 		symtyp = FMOS;
-	  } type_member_decls {
+	  } type_member_decls opt_type_attribute {
 		symtyp = FVFT;
 		$$ = $4;
 	  }
-	| noclass_declmods deftyp {
+	| noclass_declmods deftyp opt_type_attribute {
 		symtyp = FVFT;
 		/* struct or union member must be named */
 		if (!Sflag)
@@ -724,7 +775,7 @@ member_declaration:
 		$$ = dcs->d_type->t_str->memb;
 		anonymize($$);
 	  }
-	| noclass_declspecs deftyp {
+	| noclass_declspecs deftyp opt_type_attribute {
 		symtyp = FVFT;
 		/* struct or union member must be named */
 		if (!Sflag)
@@ -969,7 +1020,7 @@ notype_direct_decl:
 		popdecl();
 		blklev--;
 	  }
-	| notype_direct_decl type_attribute
+	| notype_direct_decl type_attribute_list
 	;
 
 type_decl:
@@ -1002,7 +1053,7 @@ type_direct_decl:
 		popdecl();
 		blklev--;
 	  }
-	| type_direct_decl type_attribute
+	| type_direct_decl type_attribute_list
 	;
 
 /*
@@ -1022,7 +1073,7 @@ param_decl:
 	;
 
 direct_param_decl:
-	  identifier type_attribute {
+	  identifier type_attribute_list {
 		$$ = dname(getsym($1));
 	  }
 	| identifier {
@@ -1375,7 +1426,7 @@ direct_abs_decl:
 		popdecl();
 		blklev--;
 	  }
-	| direct_abs_decl type_attribute
+	| direct_abs_decl type_attribute_list
 	;
 
 non_expr_stmnt:

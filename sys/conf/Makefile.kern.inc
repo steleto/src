@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.kern.inc,v 1.250 2016/04/09 18:51:44 riastradh Exp $
+#	$NetBSD: Makefile.kern.inc,v 1.256 2017/01/11 12:19:43 joerg Exp $
 #
 # This file contains common `MI' targets and definitions and it is included
 # at the bottom of each `MD' ${MACHINE}/conf/Makefile.${MACHINE}.
@@ -87,7 +87,8 @@ CWARNFLAGS+=	-Wold-style-definition
 CWARNFLAGS+=	-Wno-sign-compare
 
 CWARNFLAGS.clang+=	-Wno-unknown-pragmas -Wno-conversion \
-			-Wno-self-assign
+			-Wno-self-assign -Wno-error=address-of-packed-member \
+			-Wno-error=constant-conversion
 
 CWARNFLAGS.ah_regdomain.c= ${${ACTIVE_CC} == "clang":? \
     -Wno-shift-count-negative -Wno-shift-count-overflow:}
@@ -209,14 +210,20 @@ SYSTEM_CTFMERGE= ${CTFMERGE} ${CTFMFLAGS} -o ${.TARGET} ${SYSTEM_OBJ} ${EXTRA_OB
 .else
 SYSTEM_CTFMERGE= ${_MKSHECHO}
 .endif
+
+REMOVE_SWAP=   [@]
+.for k in ${KERNELS}
+REMOVE_SWAP:=  ${REMOVE_SWAP}:Nswap${k}.o
+.endfor
+
 SYSTEM_LD_HEAD?=@rm -f $@
 SYSTEM_LD?=	${_MKSHMSG} "   link  ${.CURDIR:T}/${.TARGET}"; \
 		${_MKSHECHO}\
 		${LD} -Map ${.TARGET}.map --cref ${LINKFLAGS} -o ${.TARGET} \
-		'$${SYSTEM_OBJ:N*swap*netbsd*}' '$${EXTRA_OBJ}' vers.o \
+		'$${SYSTEM_OBJ:${REMOVE_SWAP}}' '$${EXTRA_OBJ}' vers.o \
 		${OBJS:M*swap${.TARGET}.o}; \
 		${LD} -Map ${.TARGET}.map --cref ${LINKFLAGS} -o ${.TARGET} \
-		${SYSTEM_OBJ:N*swap*netbsd*} ${EXTRA_OBJ} vers.o \
+		${SYSTEM_OBJ:${REMOVE_SWAP}} ${EXTRA_OBJ} vers.o \
 		${OBJS:M*swap${.TARGET}.o}
 
 TEXTADDR?=	${LOADADDRESS}			# backwards compatibility

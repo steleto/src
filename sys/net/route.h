@@ -1,4 +1,4 @@
-/*	$NetBSD: route.h,v 1.109 2016/12/12 03:55:57 ozaki-r Exp $	*/
+/*	$NetBSD: route.h,v 1.111 2016/12/19 11:17:00 roy Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -42,8 +42,8 @@
 #include <sys/rwlock.h>
 #include <sys/condvar.h>
 #include <sys/pserialize.h>
-#include <sys/psref.h>
 #endif
+#include <sys/psref.h>
 
 #if !(defined(_KERNEL) || defined(_STANDALONE))
 #include <stdbool.h>
@@ -66,10 +66,8 @@ struct route {
 	struct	sockaddr	*ro_sa;
 	LIST_ENTRY(route)	ro_rtcache_next;
 	bool			ro_invalid;
-#ifdef _KERNEL
 	struct	psref		ro_psref;
 	int			ro_bound;
-#endif
 };
 
 /*
@@ -288,7 +286,7 @@ struct rt_msghdr {
 #define RTAX_TAG	8	/* route tag */
 #define RTAX_MAX	9	/* size of array to allocate */
 
-#define RT_ROUNDUP2(a, n)	((a) > 0 ? (1 + (((a) - 1) | ((n) - 1))) : (n))
+#define RT_ROUNDUP2(a, n)	((a) > 0 ? (1 + (((a) - 1U) | ((n) - 1))) : (n))
 #define RT_ROUNDUP(a)		RT_ROUNDUP2((a), sizeof(uint64_t))
 #define RT_ADVANCE(x, n)	(x += RT_ROUNDUP((n)->sa_len))
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: in6_gif.c,v 1.82 2016/12/14 11:19:15 knakahara Exp $	*/
+/*	$NetBSD: in6_gif.c,v 1.85 2017/01/16 15:44:47 christos Exp $	*/
 /*	$KAME: in6_gif.c,v 1.62 2001/07/29 04:27:25 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_gif.c,v 1.82 2016/12/14 11:19:15 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_gif.c,v 1.85 2017/01/16 15:44:47 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -93,10 +93,6 @@ in6_gif_output(struct ifnet *ifp, int family, struct mbuf *m)
 	struct ip6_hdr *ip6;
 	int proto, error;
 	u_int8_t itos, otos;
-	union {
-		struct sockaddr		dst;
-		struct sockaddr_in6	dst6;
-	} u;
 
 	if (sin6_src == NULL || sin6_dst == NULL ||
 	    sin6_src->sin6_family != AF_INET6 ||
@@ -176,9 +172,8 @@ in6_gif_output(struct ifnet *ifp, int family, struct mbuf *m)
 	ip6->ip6_flow &= ~ntohl(0xff00000);
 	ip6->ip6_flow |= htonl((u_int32_t)otos << 20);
 
-	sockaddr_in6_init(&u.dst6, &sin6_dst->sin6_addr, 0, 0, 0);
 	ro = percpu_getref(sc->gif_ro_percpu);
-	rt = rtcache_lookup(ro, &u.dst);
+	rt = rtcache_lookup(ro, sc->gif_pdst);
 	if (rt == NULL) {
 		percpu_putref(sc->gif_ro_percpu);
 		m_freem(m);
@@ -332,9 +327,10 @@ gif_validate6(const struct ip6_hdr *ip6, struct gif_softc *sc,
 		rt = rtalloc1(&u.sa, 0);
 		if (rt == NULL || rt->rt_ifp != ifp) {
 #if 0
+			char ip6buf[INET6_ADDRSTRLEN];
 			log(LOG_WARNING, "%s: packet from %s dropped "
 			    "due to ingress filter\n", if_name(&sc->gif_if),
-			    ip6_sprintf(&u.sin6.sin6_addr));
+			    IN6_PRINT(ip6buf, &u.sin6.sin6_addr));
 #endif
 			if (rt != NULL)
 				rt_unref(rt);

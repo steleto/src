@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.458 2016/12/15 09:28:05 ozaki-r Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.468 2017/01/16 09:58:04 maya Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -75,7 +75,7 @@
  *	- Check XXX'ed comments
  *	- Disable D0 LPLU on 8257[12356], 82580 and I350.
  *	- TX Multi queue improvement (refine queue selection logic)
- *	- Advanced Receive Descriptor
+ *	- Split header buffer for newer descriptors
  *	- EEE (Energy Efficiency Ethernet)
  *	- Virtual Function
  *	- Set LED correctly (based on contents in EEPROM)
@@ -84,7 +84,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.458 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.468 2017/01/16 09:58:04 maya Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -215,8 +215,14 @@ typedef union txdescs {
 	nq_txdesc_t      sctxu_nq_txdescs[WM_NTXDESC_82544];
 } txdescs_t;
 
+typedef union rxdescs {
+	wiseman_rxdesc_t sctxu_rxdescs[WM_NRXDESC];
+	ext_rxdesc_t      sctxu_ext_rxdescs[WM_NRXDESC]; /* 82574 only */
+	nq_rxdesc_t      sctxu_nq_rxdescs[WM_NRXDESC]; /* 82575 and newer */
+} rxdescs_t;
+
 #define	WM_CDTXOFF(txq, x)	((txq)->txq_descsize * (x))
-#define	WM_CDRXOFF(x)	(sizeof(wiseman_rxdesc_t) * x)
+#define	WM_CDRXOFF(rxq, x)	((rxq)->rxq_descsize * (x))
 
 /*
  * Software state for transmit jobs.
@@ -356,15 +362,19 @@ struct wm_rxqueue {
 	struct wm_softc *rxq_sc;	/* shortcut (skip struct wm_queue) */
 
 	/* Software state for the receive descriptors. */
-	wiseman_rxdesc_t *rxq_descs;
+	struct wm_rxsoft rxq_soft[WM_NRXDESC];
 
 	/* RX control data structures. */
-	struct wm_rxsoft rxq_soft[WM_NRXDESC];
+	int rxq_ndesc;			/* must be a power of two */
+	size_t rxq_descsize;		/* a rx descriptor size */
+	rxdescs_t *rxq_descs_u;
 	bus_dmamap_t rxq_desc_dmamap;	/* control data DMA map */
 	bus_dma_segment_t rxq_desc_seg;	/* control data segment */
 	int rxq_desc_rseg;		/* real number of control segment */
-	size_t rxq_desc_size;		/* control data size */
 #define	rxq_desc_dma	rxq_desc_dmamap->dm_segs[0].ds_addr
+#define	rxq_descs	rxq_descs_u->sctxu_rxdescs
+#define	rxq_ext_descs	rxq_descs_u->sctxu_ext_rxdescs
+#define	rxq_nq_descs	rxq_descs_u->sctxu_nq_rxdescs
 
 	bus_addr_t rxq_rdt_reg;		/* offset of RDT register */
 
@@ -578,7 +588,7 @@ do {									\
 	    (reg) + sc->sc_flashreg_offset, (data))
 
 #define	WM_CDTXADDR(txq, x)	((txq)->txq_desc_dma + WM_CDTXOFF((txq), (x)))
-#define	WM_CDRXADDR(rxq, x)	((rxq)->rxq_desc_dma + WM_CDRXOFF((x)))
+#define	WM_CDRXADDR(rxq, x)	((rxq)->rxq_desc_dma + WM_CDRXOFF((rxq), (x)))
 
 #define	WM_CDTXADDR_LO(txq, x)	(WM_CDTXADDR((txq), (x)) & 0xffffffffU)
 #define	WM_CDTXADDR_HI(txq, x)						\
@@ -1179,7 +1189,7 @@ static const struct wm_product {
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82801I_IGP_M,
 	  "82801I mobile LAN Controller",
 	  WM_T_ICH9,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82801H_IGP_M_V,
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82801I_IGP_M_V,
 	  "82801I mobile (V) LAN Controller",
 	  WM_T_ICH9,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82801I_IGP_M_AMT,
@@ -1516,7 +1526,7 @@ wm_cdrxsync(struct wm_rxqueue *rxq, int start, int ops)
 	struct wm_softc *sc = rxq->rxq_sc;
 
 	bus_dmamap_sync(sc->sc_dmat, rxq->rxq_desc_dmamap,
-	    WM_CDRXOFF(start), sizeof(wiseman_rxdesc_t), ops);
+	    WM_CDRXOFF(rxq, start), rxq->rxq_descsize, ops);
 }
 
 static inline void
@@ -1524,7 +1534,6 @@ wm_init_rxdesc(struct wm_rxqueue *rxq, int start)
 {
 	struct wm_softc *sc = rxq->rxq_sc;
 	struct wm_rxsoft *rxs = &rxq->rxq_soft[start];
-	wiseman_rxdesc_t *rxd = &rxq->rxq_descs[start];
 	struct mbuf *m = rxs->rxs_mbuf;
 
 	/*
@@ -1543,13 +1552,29 @@ wm_init_rxdesc(struct wm_rxqueue *rxq, int start)
 	 */
 	m->m_data = m->m_ext.ext_buf + sc->sc_align_tweak;
 
-	wm_set_dma_addr(&rxd->wrx_addr,
-	    rxs->rxs_dmamap->dm_segs[0].ds_addr + sc->sc_align_tweak);
-	rxd->wrx_len = 0;
-	rxd->wrx_cksum = 0;
-	rxd->wrx_status = 0;
-	rxd->wrx_errors = 0;
-	rxd->wrx_special = 0;
+	if (sc->sc_type == WM_T_82574) {
+		ext_rxdesc_t *rxd = &rxq->rxq_ext_descs[start];
+		rxd->erx_data.erxd_addr =
+			htole64(rxs->rxs_dmamap->dm_segs[0].ds_addr + sc->sc_align_tweak);
+		rxd->erx_data.erxd_dd = 0;
+	} else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
+		nq_rxdesc_t *rxd = &rxq->rxq_nq_descs[start];
+
+		rxd->nqrx_data.nrxd_paddr =
+			htole64(rxs->rxs_dmamap->dm_segs[0].ds_addr + sc->sc_align_tweak);
+		/* Currently, split header is not supported. */
+		rxd->nqrx_data.nrxd_haddr = 0;
+	} else {
+		wiseman_rxdesc_t *rxd = &rxq->rxq_descs[start];
+
+		wm_set_dma_addr(&rxd->wrx_addr,
+		    rxs->rxs_dmamap->dm_segs[0].ds_addr + sc->sc_align_tweak);
+		rxd->wrx_len = 0;
+		rxd->wrx_cksum = 0;
+		rxd->wrx_status = 0;
+		rxd->wrx_errors = 0;
+		rxd->wrx_special = 0;
+	}
 	wm_cdrxsync(rxq, start, BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	CSR_WRITE(sc, rxq->rxq_rdt_reg, start);
@@ -2877,14 +2902,12 @@ wm_tick(void *arg)
 	else
 		wm_tbi_tick(sc);
 
+	callout_reset(&sc->sc_tick_ch, hz, wm_tick, sc);
 out:
 	WM_CORE_UNLOCK(sc);
 #ifndef WM_MPSAFE
 	splx(s);
 #endif
-
-	if (!sc->sc_core_stopping)
-		callout_reset(&sc->sc_tick_ch, hz, wm_tick, sc);
 }
 
 static int
@@ -3249,9 +3272,11 @@ wm_set_filter(struct wm_softc *sc)
 	for (i = 0; i < size; i++)
 		CSR_WRITE(sc, mta_reg + (i << 2), 0);
 
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
+			ETHER_UNLOCK(ec);
 			/*
 			 * We must listen to a range of multicast addresses.
 			 * For now, just accept all multicasts, rather than
@@ -3293,6 +3318,7 @@ wm_set_filter(struct wm_softc *sc)
 
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 	goto setit;
@@ -3706,11 +3732,11 @@ wm_initialize_hardware_bits(struct wm_softc *sc)
 		}
 		CSR_WRITE(sc, WMREG_TARC0, tarc0);
 
+		switch (sc->sc_type) {
 		/*
-		 * 8257[12] Errata No.52 and some others.
+		 * 8257[12] Errata No.52, 82573 Errata No.43 and some others.
 		 * Avoid RSS Hash Value bug.
 		 */
-		switch (sc->sc_type) {
 		case WM_T_82571:
 		case WM_T_82572:
 		case WM_T_82573:
@@ -3720,9 +3746,29 @@ wm_initialize_hardware_bits(struct wm_softc *sc)
 			reg |= WMREG_RFCTL_NEWIPV6EXDIS |WMREG_RFCTL_IPV6EXDIS;
 			CSR_WRITE(sc, WMREG_RFCTL, reg);
 			break;
+		case WM_T_82574:
+			/* use extened Rx descriptor. */
+			reg = CSR_READ(sc, WMREG_RFCTL);
+			reg |= WMREG_RFCTL_EXSTEN;
+			CSR_WRITE(sc, WMREG_RFCTL, reg);
+			break;
 		default:
 			break;
 		}
+	} else if ((sc->sc_type >= WM_T_82575) && (sc->sc_type <= WM_T_I211)) {
+		/*
+		 * 82575 Errata XXX, 82576 Errata 46, 82580 Errata 24,
+		 * I350 Errata 37, I210 Errata No. 31 and I211 Errata No. 11:
+		 * "Certain Malformed IPv6 Extension Headers are Not Processed
+		 * Correctly by the Device"
+		 *
+		 * I354(C2000) Errata AVR53:
+		 * "Malformed IPv6 Extension Headers May Result in LAN Device
+		 * Hang"
+		 */
+		reg = CSR_READ(sc, WMREG_RFCTL);
+		reg |= WMREG_RFCTL_IPV6EXDIS;
+		CSR_WRITE(sc, WMREG_RFCTL, reg);
 	}
 }
 
@@ -4408,9 +4454,9 @@ wm_init_rss(struct wm_softc *sc)
 	else
 		mrqc = MRQC_ENABLE_RSS_MQ;
 
-	/* XXXX
-	 * The same as FreeBSD igb.
-	 * Why doesn't use MRQC_RSS_FIELD_IPV6_EX?
+	/*
+	 * MRQC_RSS_FIELD_IPV6_EX is not set because of an errata.
+	 * See IPV6EXDIS bit in wm_initialize_hardware_bits().
 	 */
 	mrqc |= (MRQC_RSS_FIELD_IPV4 | MRQC_RSS_FIELD_IPV4_TCP);
 	mrqc |= (MRQC_RSS_FIELD_IPV6 | MRQC_RSS_FIELD_IPV6_TCP);
@@ -5158,6 +5204,12 @@ wm_init_locked(struct ifnet *ifp)
 	    | RCTL_MO(sc->sc_mchash_type);
 
 	/*
+	 * 82574 use one buffer extended Rx descriptor.
+	 */
+	if (sc->sc_type == WM_T_82574)
+		sc->sc_rctl |= RCTL_DTYP_ONEBUF;
+
+	/*
 	 * The I350 has a bug where it always strips the CRC whether
 	 * asked to or not. So ask for stripped CRC here and cope in rxeof
 	 */
@@ -5543,6 +5595,7 @@ static int
 wm_alloc_rx_descs(struct wm_softc *sc, struct wm_rxqueue *rxq)
 {
 	int error;
+	size_t rxq_descs_size;
 
 	/*
 	 * Allocate the control data structures, and create and load the
@@ -5552,8 +5605,16 @@ wm_alloc_rx_descs(struct wm_softc *sc, struct wm_rxqueue *rxq)
 	 * memory.  So must Rx descriptors.  We simplify by allocating
 	 * both sets within the same 4G segment.
 	 */
-	rxq->rxq_desc_size = sizeof(wiseman_rxdesc_t) * WM_NRXDESC;
-	if ((error = bus_dmamem_alloc(sc->sc_dmat, rxq->rxq_desc_size,
+	rxq->rxq_ndesc = WM_NRXDESC;
+	if (sc->sc_type == WM_T_82574)
+		rxq->rxq_descsize = sizeof(ext_rxdesc_t);
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		rxq->rxq_descsize = sizeof(nq_rxdesc_t);
+	else
+		rxq->rxq_descsize = sizeof(wiseman_rxdesc_t);
+	rxq_descs_size = rxq->rxq_descsize * rxq->rxq_ndesc;
+
+	if ((error = bus_dmamem_alloc(sc->sc_dmat, rxq_descs_size,
 		    PAGE_SIZE, (bus_size_t) 0x100000000ULL, &rxq->rxq_desc_seg,
 		    1, &rxq->rxq_desc_rseg, 0)) != 0) {
 		aprint_error_dev(sc->sc_dev,
@@ -5563,15 +5624,15 @@ wm_alloc_rx_descs(struct wm_softc *sc, struct wm_rxqueue *rxq)
 	}
 
 	if ((error = bus_dmamem_map(sc->sc_dmat, &rxq->rxq_desc_seg,
-		    rxq->rxq_desc_rseg, rxq->rxq_desc_size,
-		    (void **)&rxq->rxq_descs, BUS_DMA_COHERENT)) != 0) {
+		    rxq->rxq_desc_rseg, rxq_descs_size,
+		    (void **)&rxq->rxq_descs_u, BUS_DMA_COHERENT)) != 0) {
 		aprint_error_dev(sc->sc_dev,
 		    "unable to map RX control data, error = %d\n", error);
 		goto fail_1;
 	}
 
-	if ((error = bus_dmamap_create(sc->sc_dmat, rxq->rxq_desc_size, 1,
-		    rxq->rxq_desc_size, 0, 0, &rxq->rxq_desc_dmamap)) != 0) {
+	if ((error = bus_dmamap_create(sc->sc_dmat, rxq_descs_size, 1,
+		    rxq_descs_size, 0, 0, &rxq->rxq_desc_dmamap)) != 0) {
 		aprint_error_dev(sc->sc_dev,
 		    "unable to create RX control data DMA map, error = %d\n",
 		    error);
@@ -5579,7 +5640,7 @@ wm_alloc_rx_descs(struct wm_softc *sc, struct wm_rxqueue *rxq)
 	}
 
 	if ((error = bus_dmamap_load(sc->sc_dmat, rxq->rxq_desc_dmamap,
-		    rxq->rxq_descs, rxq->rxq_desc_size, NULL, 0)) != 0) {
+		    rxq->rxq_descs_u, rxq_descs_size, NULL, 0)) != 0) {
 		aprint_error_dev(sc->sc_dev,
 		    "unable to load RX control data DMA map, error = %d\n",
 		    error);
@@ -5591,8 +5652,8 @@ wm_alloc_rx_descs(struct wm_softc *sc, struct wm_rxqueue *rxq)
  fail_3:
 	bus_dmamap_destroy(sc->sc_dmat, rxq->rxq_desc_dmamap);
  fail_2:
-	bus_dmamem_unmap(sc->sc_dmat, (void *)rxq->rxq_descs,
-	    rxq->rxq_desc_size);
+	bus_dmamem_unmap(sc->sc_dmat, (void *)rxq->rxq_descs_u,
+	    rxq_descs_size);
  fail_1:
 	bus_dmamem_free(sc->sc_dmat, &rxq->rxq_desc_seg, rxq->rxq_desc_rseg);
  fail_0:
@@ -5605,8 +5666,8 @@ wm_free_rx_descs(struct wm_softc *sc, struct wm_rxqueue *rxq)
 
 	bus_dmamap_unload(sc->sc_dmat, rxq->rxq_desc_dmamap);
 	bus_dmamap_destroy(sc->sc_dmat, rxq->rxq_desc_dmamap);
-	bus_dmamem_unmap(sc->sc_dmat, (void *)rxq->rxq_descs,
-	    rxq->rxq_desc_size);
+	bus_dmamem_unmap(sc->sc_dmat, (void *)rxq->rxq_descs_u,
+	    rxq->rxq_descsize * rxq->rxq_ndesc);
 	bus_dmamem_free(sc->sc_dmat, &rxq->rxq_desc_seg, rxq->rxq_desc_rseg);
 }
 
@@ -5660,7 +5721,7 @@ wm_alloc_rx_buffer(struct wm_softc *sc, struct wm_rxqueue *rxq)
 	int i, error;
 
 	/* Create the receive buffer DMA maps. */
-	for (i = 0; i < WM_NRXDESC; i++) {
+	for (i = 0; i < rxq->rxq_ndesc; i++) {
 		if ((error = bus_dmamap_create(sc->sc_dmat, MCLBYTES, 1,
 			    MCLBYTES, 0, 0,
 			    &rxq->rxq_soft[i].rxs_dmamap)) != 0) {
@@ -5675,7 +5736,7 @@ wm_alloc_rx_buffer(struct wm_softc *sc, struct wm_rxqueue *rxq)
 	return 0;
 
  fail:
-	for (i = 0; i < WM_NRXDESC; i++) {
+	for (i = 0; i < rxq->rxq_ndesc; i++) {
 		if (rxq->rxq_soft[i].rxs_dmamap != NULL)
 			bus_dmamap_destroy(sc->sc_dmat,
 			    rxq->rxq_soft[i].rxs_dmamap);
@@ -5688,7 +5749,7 @@ wm_free_rx_buffer(struct wm_softc *sc, struct wm_rxqueue *rxq)
 {
 	int i;
 
-	for (i = 0; i < WM_NRXDESC; i++) {
+	for (i = 0; i < rxq->rxq_ndesc; i++) {
 		if (rxq->rxq_soft[i].rxs_dmamap != NULL)
 			bus_dmamap_destroy(sc->sc_dmat,
 			    rxq->rxq_soft[i].rxs_dmamap);
@@ -5978,7 +6039,7 @@ wm_init_rx_regs(struct wm_softc *sc, struct wm_queue *wmq,
 		CSR_WRITE(sc, WMREG_OLD_RDBAH0, WM_CDRXADDR_HI(rxq, 0));
 		CSR_WRITE(sc, WMREG_OLD_RDBAL0, WM_CDRXADDR_LO(rxq, 0));
 		CSR_WRITE(sc, WMREG_OLD_RDLEN0,
-		    sizeof(wiseman_rxdesc_t) * WM_NRXDESC);
+		    rxq->rxq_descsize * rxq->rxq_ndesc);
 		CSR_WRITE(sc, WMREG_OLD_RDH0, 0);
 		CSR_WRITE(sc, WMREG_OLD_RDT0, 0);
 		CSR_WRITE(sc, WMREG_OLD_RDTR0, 28 | RDTR_FPD);
@@ -5994,12 +6055,14 @@ wm_init_rx_regs(struct wm_softc *sc, struct wm_queue *wmq,
 
 		CSR_WRITE(sc, WMREG_RDBAH(qid), WM_CDRXADDR_HI(rxq, 0));
 		CSR_WRITE(sc, WMREG_RDBAL(qid), WM_CDRXADDR_LO(rxq, 0));
-		CSR_WRITE(sc, WMREG_RDLEN(qid), rxq->rxq_desc_size);
+		CSR_WRITE(sc, WMREG_RDLEN(qid), rxq->rxq_descsize * rxq->rxq_ndesc);
 
 		if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
 			if (MCLBYTES & ((1 << SRRCTL_BSIZEPKT_SHIFT) - 1))
 				panic("%s: MCLBYTES %d unsupported for i2575 or higher\n", __func__, MCLBYTES);
-			CSR_WRITE(sc, WMREG_SRRCTL(qid), SRRCTL_DESCTYPE_LEGACY
+
+			/* Currently, support SRRCTL_DESCTYPE_ADV_ONEBUF only. */
+			CSR_WRITE(sc, WMREG_SRRCTL(qid), SRRCTL_DESCTYPE_ADV_ONEBUF
 			    | (MCLBYTES >> SRRCTL_BSIZEPKT_SHIFT));
 			CSR_WRITE(sc, WMREG_RXDCTL(qid), RXDCTL_QUEUE_ENABLE
 			    | RXDCTL_PTHRESH(16) | RXDCTL_HTHRESH(8)
@@ -6027,7 +6090,7 @@ wm_init_rx_buffer(struct wm_softc *sc, struct wm_rxqueue *rxq)
 
 	KASSERT(mutex_owned(rxq->rxq_lock));
 
-	for (i = 0; i < WM_NRXDESC; i++) {
+	for (i = 0; i < rxq->rxq_ndesc; i++) {
 		rxs = &rxq->rxq_soft[i];
 		if (rxs->rxs_mbuf == NULL) {
 			if ((error = wm_add_rxbuf(rxq, i)) != 0) {
@@ -6314,7 +6377,7 @@ wm_select_txqueue(struct ifnet *ifp, struct mbuf *m)
 	/*
 	 * Currently, simple distribute strategy.
 	 * TODO:
-	 * destribute by flowid(RSS has value).
+	 * distribute by flowid(RSS has value).
 	 */
 	return (cpuid + sc->sc_affinity_offset) % sc->sc_nqueues;
 }
@@ -7396,6 +7459,224 @@ wm_txeof(struct wm_softc *sc, struct wm_txqueue *txq)
 	return processed;
 }
 
+static inline uint32_t
+wm_rxdesc_get_status(struct wm_rxqueue *rxq, int idx)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	if (sc->sc_type == WM_T_82574)
+		return EXTRXC_STATUS(rxq->rxq_ext_descs[idx].erx_ctx.erxc_err_stat);
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		return NQRXC_STATUS(rxq->rxq_nq_descs[idx].nqrx_ctx.nrxc_err_stat);
+	else
+		return rxq->rxq_descs[idx].wrx_status;
+}
+
+static inline uint32_t
+wm_rxdesc_get_errors(struct wm_rxqueue *rxq, int idx)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	if (sc->sc_type == WM_T_82574)
+		return EXTRXC_ERROR(rxq->rxq_ext_descs[idx].erx_ctx.erxc_err_stat);
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		return NQRXC_ERROR(rxq->rxq_nq_descs[idx].nqrx_ctx.nrxc_err_stat);
+	else
+		return rxq->rxq_descs[idx].wrx_errors;
+}
+
+static inline uint16_t
+wm_rxdesc_get_vlantag(struct wm_rxqueue *rxq, int idx)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	if (sc->sc_type == WM_T_82574)
+		return rxq->rxq_ext_descs[idx].erx_ctx.erxc_vlan;
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		return rxq->rxq_nq_descs[idx].nqrx_ctx.nrxc_vlan;
+	else
+		return rxq->rxq_descs[idx].wrx_special;
+}
+
+static inline int
+wm_rxdesc_get_pktlen(struct wm_rxqueue *rxq, int idx)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	if (sc->sc_type == WM_T_82574)
+		return rxq->rxq_ext_descs[idx].erx_ctx.erxc_pktlen;
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		return rxq->rxq_nq_descs[idx].nqrx_ctx.nrxc_pktlen;
+	else
+		return rxq->rxq_descs[idx].wrx_len;
+}
+
+#ifdef WM_DEBUG
+static inline uint32_t
+wm_rxdesc_get_rsshash(struct wm_rxqueue *rxq, int idx)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	if (sc->sc_type == WM_T_82574)
+		return rxq->rxq_ext_descs[idx].erx_ctx.erxc_rsshash;
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		return rxq->rxq_nq_descs[idx].nqrx_ctx.nrxc_rsshash;
+	else
+		return 0;
+}
+
+static inline uint8_t
+wm_rxdesc_get_rsstype(struct wm_rxqueue *rxq, int idx)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	if (sc->sc_type == WM_T_82574)
+		return EXTRXC_RSS_TYPE(rxq->rxq_ext_descs[idx].erx_ctx.erxc_mrq);
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		return NQRXC_RSS_TYPE(rxq->rxq_nq_descs[idx].nqrx_ctx.nrxc_misc);
+	else
+		return 0;
+}
+#endif /* WM_DEBUG */
+
+static inline bool
+wm_rxdesc_is_set_status(struct wm_softc *sc, uint32_t status,
+    uint32_t legacy_bit, uint32_t ext_bit, uint32_t nq_bit)
+{
+
+	if (sc->sc_type == WM_T_82574)
+		return (status & ext_bit) != 0;
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		return (status & nq_bit) != 0;
+	else
+		return (status & legacy_bit) != 0;
+}
+
+static inline bool
+wm_rxdesc_is_set_error(struct wm_softc *sc, uint32_t error,
+    uint32_t legacy_bit, uint32_t ext_bit, uint32_t nq_bit)
+{
+
+	if (sc->sc_type == WM_T_82574)
+		return (error & ext_bit) != 0;
+	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
+		return (error & nq_bit) != 0;
+	else
+		return (error & legacy_bit) != 0;
+}
+
+static inline bool
+wm_rxdesc_is_eop(struct wm_rxqueue *rxq, uint32_t status)
+{
+
+	if (wm_rxdesc_is_set_status(rxq->rxq_sc, status,
+		WRX_ST_EOP, EXTRXC_STATUS_EOP, NQRXC_STATUS_EOP))
+		return true;
+	else
+		return false;
+}
+
+static inline bool
+wm_rxdesc_has_errors(struct wm_rxqueue *rxq, uint32_t errors)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	/* XXXX missing error bit for newqueue? */
+	if (wm_rxdesc_is_set_error(sc, errors,
+		WRX_ER_CE|WRX_ER_SE|WRX_ER_SEQ|WRX_ER_CXE|WRX_ER_RXE,
+		EXTRXC_ERROR_CE|EXTRXC_ERROR_SE|EXTRXC_ERROR_SEQ|EXTRXC_ERROR_CXE|EXTRXC_ERROR_RXE,
+		NQRXC_ERROR_RXE)) {
+		if (wm_rxdesc_is_set_error(sc, errors, WRX_ER_SE, EXTRXC_ERROR_SE, 0))
+			log(LOG_WARNING, "%s: symbol error\n",
+			    device_xname(sc->sc_dev));
+		else if (wm_rxdesc_is_set_error(sc, errors, WRX_ER_SEQ, EXTRXC_ERROR_SEQ, 0))
+			log(LOG_WARNING, "%s: receive sequence error\n",
+			    device_xname(sc->sc_dev));
+		else if (wm_rxdesc_is_set_error(sc, errors, WRX_ER_CE, EXTRXC_ERROR_CE, 0))
+			log(LOG_WARNING, "%s: CRC error\n",
+			    device_xname(sc->sc_dev));
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool
+wm_rxdesc_dd(struct wm_rxqueue *rxq, int idx, uint32_t status)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	if (!wm_rxdesc_is_set_status(sc, status, WRX_ST_DD, EXTRXC_STATUS_DD,
+		NQRXC_STATUS_DD)) {
+		/* We have processed all of the receive descriptors. */
+		struct wm_rxsoft *rxs = &rxq->rxq_soft[idx];
+
+		if (sc->sc_type == WM_T_82574) {
+			rxq->rxq_ext_descs[idx].erx_data.erxd_addr =
+				htole64(rxs->rxs_dmamap->dm_segs[0].ds_addr
+				    + sc->sc_align_tweak);
+		} else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
+			rxq->rxq_nq_descs[idx].nqrx_data.nrxd_paddr =
+				htole64(rxs->rxs_dmamap->dm_segs[0].ds_addr
+				    + sc->sc_align_tweak);
+		}
+
+		wm_cdrxsync(rxq, idx, BUS_DMASYNC_PREREAD);
+		return false;
+	}
+
+	return true;
+}
+
+static inline bool
+wm_rxdesc_input_vlantag(struct wm_rxqueue *rxq, uint32_t status, uint16_t vlantag,
+    struct mbuf *m)
+{
+	struct ifnet *ifp = &rxq->rxq_sc->sc_ethercom.ec_if;
+
+	if (wm_rxdesc_is_set_status(rxq->rxq_sc, status,
+		WRX_ST_VP, EXTRXC_STATUS_VP, NQRXC_STATUS_VP)) {
+		VLAN_INPUT_TAG(ifp, m, le16toh(vlantag), return false);
+	}
+
+	return true;
+}
+
+static inline void
+wm_rxdesc_ensure_checksum(struct wm_rxqueue *rxq, uint32_t status,
+    uint32_t errors, struct mbuf *m)
+{
+	struct wm_softc *sc = rxq->rxq_sc;
+
+	if (!wm_rxdesc_is_set_status(sc, status, WRX_ST_IXSM, 0, 0)) {
+		if (wm_rxdesc_is_set_status(sc, status,
+			WRX_ST_IPCS, EXTRXC_STATUS_IPCS, NQRXC_STATUS_IPCS)) {
+			WM_Q_EVCNT_INCR(rxq, rxipsum);
+			m->m_pkthdr.csum_flags |= M_CSUM_IPv4;
+			if (wm_rxdesc_is_set_error(sc, errors,
+				WRX_ER_IPE, EXTRXC_ERROR_IPE, NQRXC_ERROR_IPE))
+				m->m_pkthdr.csum_flags |=
+					M_CSUM_IPv4_BAD;
+		}
+		if (wm_rxdesc_is_set_status(sc, status,
+			WRX_ST_TCPCS, EXTRXC_STATUS_TCPCS, NQRXC_STATUS_L4I)) {
+			/*
+			 * Note: we don't know if this was TCP or UDP,
+			 * so we just set both bits, and expect the
+			 * upper layers to deal.
+			 */
+			WM_Q_EVCNT_INCR(rxq, rxtusum);
+			m->m_pkthdr.csum_flags |=
+				M_CSUM_TCPv4 | M_CSUM_UDPv4 |
+				M_CSUM_TCPv6 | M_CSUM_UDPv6;
+			if (wm_rxdesc_is_set_error(sc, errors,
+				WRX_ER_TCPE, EXTRXC_ERROR_TCPE, NQRXC_ERROR_L4E))
+				m->m_pkthdr.csum_flags |=
+					M_CSUM_TCP_UDP_BAD;
+		}
+	}
+}
+
 /*
  * wm_rxeof:
  *
@@ -7410,7 +7691,7 @@ wm_rxeof(struct wm_rxqueue *rxq)
 	struct mbuf *m;
 	int i, len;
 	int count = 0;
-	uint8_t status, errors;
+	uint32_t status, errors;
 	uint16_t vlantag;
 
 	KASSERT(mutex_owned(rxq->rxq_lock));
@@ -7421,19 +7702,19 @@ wm_rxeof(struct wm_rxqueue *rxq)
 		DPRINTF(WM_DEBUG_RX,
 		    ("%s: RX: checking descriptor %d\n",
 		    device_xname(sc->sc_dev), i));
-
 		wm_cdrxsync(rxq, i,BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE);
 
-		status = rxq->rxq_descs[i].wrx_status;
-		errors = rxq->rxq_descs[i].wrx_errors;
-		len = le16toh(rxq->rxq_descs[i].wrx_len);
-		vlantag = rxq->rxq_descs[i].wrx_special;
+		status = wm_rxdesc_get_status(rxq, i);
+		errors = wm_rxdesc_get_errors(rxq, i);
+		len = le16toh(wm_rxdesc_get_pktlen(rxq, i));
+		vlantag = wm_rxdesc_get_vlantag(rxq, i);
+#ifdef WM_DEBUG
+		uint32_t rsshash = wm_rxdesc_get_rsshash(rxq, i);
+		uint8_t rsstype = wm_rxdesc_get_rsstype(rxq, i);
+#endif
 
-		if ((status & WRX_ST_DD) == 0) {
-			/* We have processed all of the receive descriptors. */
-			wm_cdrxsync(rxq, i, BUS_DMASYNC_PREREAD);
+		if (!wm_rxdesc_dd(rxq, i, status))
 			break;
-		}
 
 		count++;
 		if (__predict_false(rxq->rxq_discard)) {
@@ -7441,7 +7722,7 @@ wm_rxeof(struct wm_rxqueue *rxq)
 			    ("%s: RX: discarding contents of descriptor %d\n",
 			    device_xname(sc->sc_dev), i));
 			wm_init_rxdesc(rxq, i);
-			if (status & WRX_ST_EOP) {
+			if (wm_rxdesc_is_eop(rxq, status)) {
 				/* Reset our state. */
 				DPRINTF(WM_DEBUG_RX,
 				    ("%s: RX: resetting rxdiscard -> 0\n",
@@ -7470,7 +7751,7 @@ wm_rxeof(struct wm_rxqueue *rxq)
 			bus_dmamap_sync(sc->sc_dmat, rxs->rxs_dmamap, 0,
 			    rxs->rxs_dmamap->dm_mapsize, BUS_DMASYNC_PREREAD);
 			wm_init_rxdesc(rxq, i);
-			if ((status & WRX_ST_EOP) == 0)
+			if (!wm_rxdesc_is_eop(rxq, status))
 				rxq->rxq_discard = 1;
 			if (rxq->rxq_head != NULL)
 				m_freem(rxq->rxq_head);
@@ -7489,7 +7770,7 @@ wm_rxeof(struct wm_rxqueue *rxq)
 		    device_xname(sc->sc_dev), m->m_data, len));
 
 		/* If this is not the end of the packet, keep looking. */
-		if ((status & WRX_ST_EOP) == 0) {
+		if (!wm_rxdesc_is_eop(rxq, status)) {
 			WM_RXCHAIN_LINK(rxq, m);
 			DPRINTF(WM_DEBUG_RX,
 			    ("%s: RX: not yet EOP, rxlen -> %d\n",
@@ -7532,17 +7813,7 @@ wm_rxeof(struct wm_rxqueue *rxq)
 		    device_xname(sc->sc_dev), len));
 
 		/* If an error occurred, update stats and drop the packet. */
-		if (errors &
-		     (WRX_ER_CE|WRX_ER_SE|WRX_ER_SEQ|WRX_ER_CXE|WRX_ER_RXE)) {
-			if (errors & WRX_ER_SE)
-				log(LOG_WARNING, "%s: symbol error\n",
-				    device_xname(sc->sc_dev));
-			else if (errors & WRX_ER_SEQ)
-				log(LOG_WARNING, "%s: receive sequence error\n",
-				    device_xname(sc->sc_dev));
-			else if (errors & WRX_ER_CE)
-				log(LOG_WARNING, "%s: CRC error\n",
-				    device_xname(sc->sc_dev));
+		if (wm_rxdesc_has_errors(rxq, errors)) {
 			m_freem(m);
 			continue;
 		}
@@ -7550,40 +7821,24 @@ wm_rxeof(struct wm_rxqueue *rxq)
 		/* No errors.  Receive the packet. */
 		m_set_rcvif(m, ifp);
 		m->m_pkthdr.len = len;
+                /*
+                 * TODO
+                 * should be save rsshash and rsstype to this mbuf.
+                 */
+                DPRINTF(WM_DEBUG_RX,
+                    ("%s: RX: RSS type=%" PRIu8 ", RSS hash=%" PRIu32 "\n",
+                        device_xname(sc->sc_dev), rsstype, rsshash));
 
 		/*
 		 * If VLANs are enabled, VLAN packets have been unwrapped
 		 * for us.  Associate the tag with the packet.
 		 */
 		/* XXXX should check for i350 and i354 */
-		if ((status & WRX_ST_VP) != 0) {
-			VLAN_INPUT_TAG(ifp, m, le16toh(vlantag), continue);
-		}
+		if (!wm_rxdesc_input_vlantag(rxq, status, vlantag, m))
+			continue;
 
 		/* Set up checksum info for this packet. */
-		if ((status & WRX_ST_IXSM) == 0) {
-			if (status & WRX_ST_IPCS) {
-				WM_Q_EVCNT_INCR(rxq, rxipsum);
-				m->m_pkthdr.csum_flags |= M_CSUM_IPv4;
-				if (errors & WRX_ER_IPE)
-					m->m_pkthdr.csum_flags |=
-					    M_CSUM_IPv4_BAD;
-			}
-			if (status & WRX_ST_TCPCS) {
-				/*
-				 * Note: we don't know if this was TCP or UDP,
-				 * so we just set both bits, and expect the
-				 * upper layers to deal.
-				 */
-				WM_Q_EVCNT_INCR(rxq, rxtusum);
-				m->m_pkthdr.csum_flags |=
-				    M_CSUM_TCPv4 | M_CSUM_UDPv4 |
-				    M_CSUM_TCPv6 | M_CSUM_UDPv6;
-				if (errors & WRX_ER_TCPE)
-					m->m_pkthdr.csum_flags |=
-					    M_CSUM_TCP_UDP_BAD;
-			}
-		}
+		wm_rxdesc_ensure_checksum(rxq, status, errors, m);
 
 		mutex_exit(rxq->rxq_lock);
 

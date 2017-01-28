@@ -965,7 +965,7 @@ void ixgbe_restore_mdd_vf_X550(struct ixgbe_hw *hw, u32 vf)
 		num_qs = 4;  /* 32 VFs / pools */
 		bitmask = 0x0000000F;
 		break;
-	default:            /* 64 VFs / pools */
+	default:	    /* 64 VFs / pools */
 		num_qs = 2;
 		bitmask = 0x00000003;
 		break;
@@ -2645,7 +2645,7 @@ void ixgbe_disable_rx_x550(struct ixgbe_hw *hw)
 	s32 status;
 	struct ixgbe_hic_disable_rxen fw_cmd;
 
-	DEBUGFUNC("ixgbe_enable_rx_dma_x550");
+	DEBUGFUNC("ixgbe_disable_rx_dma_x550");
 
 	rxctrl = IXGBE_READ_REG(hw, IXGBE_RXCTRL);
 	if (rxctrl & IXGBE_RXCTRL_RXEN) {

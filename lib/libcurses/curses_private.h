@@ -1,4 +1,4 @@
-/*	$NetBSD: curses_private.h,v 1.51 2016/10/23 21:20:56 christos Exp $	*/
+/*	$NetBSD: curses_private.h,v 1.60 2017/01/24 17:27:30 roy Exp $	*/
 
 /*-
  * Copyright (c) 1998-2000 Brett Lymn
@@ -131,6 +131,8 @@ struct __window {		/* Window structure. */
 #define __IDCHAR	0x00040000	/* insert/delete char sequences */
 #define __ISPAD		0x00080000	/* "window" is a pad */
 #define __ISDERWIN	0x00100000	/* "window" is derived from parent */
+#define __IMMEDOK	0x00200000	/* refreshed when changed */
+#define __SYNCOK	0x00400000	/* sync when changed */
 	unsigned int flags;
 	int	delay;			/* delay for getch() */
 	attr_t	wattr;			/* Character attributes */
@@ -181,11 +183,34 @@ struct __pair {
 };
 
 /* Maximum colours */
-#define	MAX_COLORS	64
+#define	MAX_COLORS	256
 /* Maximum colour pairs - determined by number of colour bits in attr_t */
 #define	MAX_PAIRS	PAIR_NUMBER(__COLOR)
 
 typedef struct keymap keymap_t;
+
+/* POSIX allows up to 8 columns in a label. */
+#define	MAX_SLK_COLS	8
+#ifdef HAVE_WCHAR
+#define	MAX_SLK_LABEL	sizeof(wchar_t) * MAX_SLK_COLS
+#else
+#define	MAX_SLK_LABEL	MAX_SLK_COLS
+#endif
+struct __slk_label {
+	char	*text;
+	int	 justify;
+#define	SLK_JUSTIFY_LEFT	0
+#define	SLK_JUSTIFY_CENTER	1
+#define	SLK_JUSTIFY_RIGHT	2
+	char	 label[MAX_SLK_LABEL + 1];
+	int	 x;
+};
+
+#define	MAX_RIPS	5
+struct __ripoff {
+	int	nlines;
+	WINDOW	*win;
+};
 
 /* this is the encapsulation of the terminal definition, one for
  * each terminal that curses talks to.
@@ -199,7 +224,12 @@ struct __screen {
 	int      lx, ly;        /* loop parameters for refresh */
 	int	 COLS;		/* Columns on the screen. */
 	int	 LINES;		/* Lines on the screen. */
+	int	 nripped;	/* Number of ripofflines. */
+	struct __ripoff ripped[MAX_RIPS];	/* ripofflines. */
+	int	 ESCDELAY;	/* Delay between keys in esc seq's. */
+#define	ESCDELAY_DEFAULT	300 /* milliseconds. */
 	int	 TABSIZE;	/* Size of a tab. */
+#define	TABSIZE_DEFAULT		8   /* spaces. */
 	int	 COLORS;	/* Maximum colors on the screen */
 	int	 COLOR_PAIRS;	/* Maximum color pairs on the screen */
 	int	 My_term;	/* Use Def_term regardless. */
@@ -252,6 +282,20 @@ struct __screen {
 	int resized;
 	wchar_t *unget_list;
 	int unget_len, unget_pos;
+	int filtered;
+	int checkfd;
+
+	/* soft label key */
+	bool		 is_term_slk;
+	WINDOW		*slk_window;
+	int		 slk_format;
+#define	SLK_FMT_3_2_3	0
+#define	SLK_FMT_4_4	1
+	int		 slk_nlabels;
+	int		 slk_label_len;
+	bool		 slk_hidden;
+	struct __slk_label *slk_labels;
+
 #ifdef HAVE_WCHAR
 #define MB_LEN_MAX 8
 #define MAX_CBUF_SIZE MB_LEN_MAX
@@ -306,7 +350,7 @@ void     _cursesi_reset_wacs(SCREEN *);
 void     _cursesi_resetterm(SCREEN *);
 int      _cursesi_setterm(char *, SCREEN *);
 int	 __delay(void);
-u_int	 __hash_more(const void *, size_t, u_int);
+unsigned int	 __hash_more(const void *, size_t, unsigned int);
 #define	__hash(s, len)	__hash_more((s), (len), 0u)
 void	 __id_subwins(WINDOW *);
 void	 __init_getch(SCREEN *);
@@ -333,18 +377,27 @@ void     __restore_meta_state(void);
 void	 __restore_termios(void);
 void	 __restore_stophandler(void);
 void	 __restore_winchhandler(void);
+int	 __ripoffscreen(SCREEN *, int *);
+void	 __ripoffresize(SCREEN *);
+int	 __rippedlines(const SCREEN *);
 void	 __save_termios(void);
 void	 __set_color(WINDOW *win, attr_t attr);
 void	 __set_stophandler(void);
 void	 __set_winchhandler(void);
 void	 __set_subwin(WINDOW *, WINDOW *);
+int	 __slk_init(SCREEN *);
+void	 __slk_free(SCREEN *);
+int	 __slk_resize(SCREEN *, int cols);
+int	 __slk_noutrefresh(SCREEN *);
 void	 __startwin(SCREEN *);
 void	 __stop_signal_handler(int);
 int	 __stopwin(void);
 void	 __swflags(WINDOW *);
+void	 __sync(WINDOW *);
 int	 __timeout(int);
 int	 __touchline(WINDOW *, int, int, int);
 int	 __touchwin(WINDOW *);
+int	 __unripoffline(int (*)(WINDOW *, int));
 void	 __unsetattr(int);
 void	 __unset_color(WINDOW *win);
 int	 __waddch(WINDOW *, __LDATA *);

@@ -1,7 +1,7 @@
-/*	$NetBSD: npf_parse.y,v 1.38 2015/03/24 20:24:17 christos Exp $	*/
+/*	$NetBSD: npf_parse.y,v 1.44 2017/01/20 23:00:30 rmind Exp $	*/
 
 /*-
- * Copyright (c) 2011-2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2011-2017 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -36,7 +36,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __NetBSD__
 #include <vis.h>
+#endif
 
 #include "npfctl.h"
 
@@ -65,11 +67,14 @@ yyerror(const char *fmt, ...)
 	fprintf(stderr, "%s:%d:%d: %s", yyfilename,
 	    yylineno - (int)eol, yycolumn, msg);
 	if (!eol) {
+#ifdef __NetBSD__
 		size_t len = strlen(context);
 		char *dst = ecalloc(1, len * 4 + 1);
 
 		strvisx(dst, context, len, VIS_WHITE|VIS_CSTYLE);
-		fprintf(stderr, " near '%s'", dst);
+		context = dst;
+#endif
+		fprintf(stderr, " near '%s'", context);
 	}
 	fprintf(stderr, "\n");
 	exit(EXIT_FAILURE);
@@ -105,6 +110,7 @@ yyerror(const char *fmt, ...)
 %token			TDYNAMIC
 %token			TSTATIC
 %token			EQ
+%token			EXCL_MARK
 %token			TFILE
 %token			FLAGS
 %token			FROM
@@ -115,6 +121,7 @@ yyerror(const char *fmt, ...)
 %token			IN
 %token			INET4
 %token			INET6
+%token			IFADDRS
 %token			INTERFACE
 %token			MAP
 %token			MINUS
@@ -160,19 +167,20 @@ yyerror(const char *fmt, ...)
 %token	<str>		TABLE_ID
 %token	<str>		VAR_ID
 
-%type	<str>		addr, some_name, table_store
+%type	<str>		addr, some_name, table_store, dynamic_ifaddrs
 %type	<str>		proc_param_val, opt_apply, ifname, on_ifname, ifref
 %type	<num>		port, opt_final, number, afamily, opt_family
 %type	<num>		block_or_pass, rule_dir, group_dir, block_opts
-%type	<num>		opt_stateful, icmp_type, table_type
+%type	<num>		maybe_not, opt_stateful, icmp_type, table_type
 %type	<num>		map_sd, map_algo, map_type
-%type	<var>		ifaddrs, addr_or_ifaddr, port_range, icmp_type_and_code
+%type	<var>		static_ifaddrs, addr_or_ifaddr
+%type	<var>		port_range, icmp_type_and_code
 %type	<var>		filt_addr, addr_and_mask, tcp_flags, tcp_flags_and_mask
 %type	<var>		procs, proc_call, proc_param_list, proc_param
 %type	<var>		element, list_elems, list, value
 %type	<addrport>	mapseg
 %type	<filtopts>	filt_opts, all_or_filt_opts
-%type	<optproto>	opt_proto
+%type	<optproto>	proto opt_proto
 %type	<rulegroup>	group_opts
 %type	<tf>		onoff
 
@@ -287,7 +295,8 @@ element
 		$$ = npfvar_create_from_string(NPFVAR_VAR_ID, $1);
 	}
 	| TABLE_ID		{ $$ = npfctl_parse_table_id($1); }
-	| ifaddrs		{ $$ = $1; }
+	| dynamic_ifaddrs	{ $$ = npfctl_ifnet_table($1); }
+	| static_ifaddrs	{ $$ = $1; }
 	| addr_and_mask		{ $$ = $1; }
 	;
 
@@ -343,13 +352,18 @@ mapseg
 	;
 
 map
-	: MAP ifref map_sd map_algo mapseg map_type mapseg PASS filt_opts
+	: MAP ifref map_sd map_algo mapseg map_type mapseg
+	  PASS opt_proto filt_opts
 	{
-		npfctl_build_natseg($3, $6, $2, &$5, &$7, &$9, $4);
+		npfctl_build_natseg($3, $6, $2, &$5, &$7, &$9, &$10, $4);
 	}
 	| MAP ifref map_sd map_algo mapseg map_type mapseg
 	{
-		npfctl_build_natseg($3, $6, $2, &$5, &$7, NULL, $4);
+		npfctl_build_natseg($3, $6, $2, &$5, &$7, NULL, NULL, $4);
+	}
+	| MAP ifref map_sd map_algo proto mapseg map_type mapseg
+	{
+		npfctl_build_natseg($3, $7, $2, &$6, &$8, &$5, NULL, $4);
 	}
 	| MAP RULESET group_opts
 	{
@@ -526,12 +540,17 @@ afamily
 	| INET6			{ $$ = AF_INET6; }
 	;
 
+maybe_not
+	: EXCL_MARK		{ $$ = true; }
+	|			{ $$ = false; }
+	;
+
 opt_family
 	: FAMILY afamily	{ $$ = $2; }
 	|			{ $$ = AF_UNSPEC; }
 	;
 
-opt_proto
+proto
 	: PROTO TCP tcp_flags_and_mask
 	{
 		$$.op_proto = IPPROTO_TCP;
@@ -557,6 +576,10 @@ opt_proto
 		$$.op_proto = $2;
 		$$.op_opts = NULL;
 	}
+	;
+
+opt_proto
+	: proto			{ $$ = $1; }
 	|
 	{
 		$$.op_proto = -1;
@@ -567,8 +590,10 @@ opt_proto
 all_or_filt_opts
 	: ALL
 	{
+		$$.fo_finvert = false;
 		$$.fo_from.ap_netaddr = NULL;
 		$$.fo_from.ap_portrange = NULL;
+		$$.fo_tinvert = false;
 		$$.fo_to.ap_netaddr = NULL;
 		$$.fo_to.ap_portrange = NULL;
 	}
@@ -594,32 +619,39 @@ block_opts
 	;
 
 filt_opts
-	: FROM filt_addr port_range TO filt_addr port_range
+	: FROM maybe_not filt_addr port_range TO maybe_not filt_addr port_range
 	{
-		$$.fo_from.ap_netaddr = $2;
-		$$.fo_from.ap_portrange = $3;
-		$$.fo_to.ap_netaddr = $5;
-		$$.fo_to.ap_portrange = $6;
+		$$.fo_finvert = $2;
+		$$.fo_from.ap_netaddr = $3;
+		$$.fo_from.ap_portrange = $4;
+		$$.fo_tinvert = $6;
+		$$.fo_to.ap_netaddr = $7;
+		$$.fo_to.ap_portrange = $8;
 	}
-	| FROM filt_addr port_range
+	| FROM maybe_not filt_addr port_range
 	{
-		$$.fo_from.ap_netaddr = $2;
-		$$.fo_from.ap_portrange = $3;
+		$$.fo_finvert = $2;
+		$$.fo_from.ap_netaddr = $3;
+		$$.fo_from.ap_portrange = $4;
+		$$.fo_tinvert = false;
 		$$.fo_to.ap_netaddr = NULL;
 		$$.fo_to.ap_portrange = NULL;
 	}
-	| TO filt_addr port_range
+	| TO maybe_not filt_addr port_range
 	{
+		$$.fo_finvert = false;
 		$$.fo_from.ap_netaddr = NULL;
 		$$.fo_from.ap_portrange = NULL;
-		$$.fo_to.ap_netaddr = $2;
-		$$.fo_to.ap_portrange = $3;
+		$$.fo_tinvert = $2;
+		$$.fo_to.ap_netaddr = $3;
+		$$.fo_to.ap_portrange = $4;
 	}
 	;
 
 filt_addr
 	: list			{ $$ = $1; }
 	| addr_or_ifaddr	{ $$ = $1; }
+	| dynamic_ifaddrs	{ $$ = npfctl_ifnet_table($1); }
 	| TABLE_ID		{ $$ = npfctl_parse_table_id($1); }
 	| ANY			{ $$ = NULL; }
 	;
@@ -645,8 +677,10 @@ addr_or_ifaddr
 		assert($1 != NULL);
 		$$ = $1;
 	}
-	| ifaddrs
+	| static_ifaddrs
 	{
+		if (npfvar_get_count($1) != 1)
+			yyerror("multiple interfaces are not supported");
 		ifnet_addr_t *ifna = npfvar_get_data($1, NPFVAR_INTERFACE, 0);
 		$$ = ifna->ifna_addrs;
 	}
@@ -665,6 +699,7 @@ again:
 			type = npfvar_get_type(vp, 0);
 			goto again;
 		case NPFVAR_FAM:
+		case NPFVAR_TABLE:
 			$$ = vp;
 			break;
 		case NPFVAR_INTERFACE:
@@ -701,12 +736,14 @@ port_range
 	}
 	| PORT VAR_ID
 	{
-		$$ = npfctl_parse_port_range_variable($2);
+		npfvar_t *vp = npfvar_lookup($2);
+		$$ = npfctl_parse_port_range_variable($2, vp);
 	}
-	|
+	| PORT list
 	{
-		$$ = NULL;
+		$$ = npfctl_parse_port_range_variable(NULL, $2);
 	}
+	|			{ $$ = NULL; }
 	;
 
 port
@@ -746,6 +783,8 @@ tcp_flags_and_mask
 	}
 	| FLAGS tcp_flags
 	{
+		if (npfvar_get_count($2) != 1)
+			yyerror("multiple tcpflags are not supported");
 		char *s = npfvar_get_data($2, NPFVAR_TCPFLAG, 0);
 		npfvar_add_elements($2, npfctl_parse_tcpflag(s));
 		$$ = $2;
@@ -785,6 +824,9 @@ ifname
 			$$ = npfvar_expand_string(vp);
 			break;
 		case NPFVAR_INTERFACE:
+			if (npfvar_get_count(vp) != 1)
+				yyerror(
+				    "multiple interfaces are not supported");
 			ifna = npfvar_get_data(vp, type, 0);
 			$$ = ifna->ifna_name;
 			break;
@@ -800,17 +842,27 @@ ifname
 	}
 	;
 
-ifaddrs
+static_ifaddrs
 	: afamily PAR_OPEN ifname PAR_CLOSE
 	{
 		$$ = npfctl_parse_ifnet($3, $1);
 	}
 	;
 
+dynamic_ifaddrs
+	: IFADDRS PAR_OPEN ifname PAR_CLOSE
+	{
+		$$ = $3;
+	}
+	;
+
 ifref
 	: ifname
-	| ifaddrs
+	| dynamic_ifaddrs
+	| static_ifaddrs
 	{
+		if (npfvar_get_count($1) != 1)
+			yyerror("multiple interfaces are not supported");
 		ifnet_addr_t *ifna = npfvar_get_data($1, NPFVAR_INTERFACE, 0);
 		npfctl_note_interface(ifna->ifna_name);
 		$$ = ifna->ifna_name;
