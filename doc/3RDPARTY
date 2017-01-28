@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1383 2016/11/29 09:04:18 wiz Exp $
+#	$NetBSD: 3RDPARTY,v 1.1400 2017/01/22 22:26:16 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -114,8 +114,8 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.10.4-P4/BSD	9.11.0-P1/MPL
-Current Vers:	9.10.4-P4/BSD
+Version:	9.10.4-P5/BSD	9.11.0-P2/MPL
+Current Vers:	9.10.4-P5/BSD
 Maintainer:	Paul Vixie <vixie@vix.com>
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
@@ -141,6 +141,20 @@ Mailing List:	https://unbound.nlnetlabs.nl/mailman/listinfo/unbound-users
 Responsible:	christos
 License:	BSD-like
 Location:	external/bsd/unbound/dist
+Notes:
+Use cleantags to import
+run configure and update config files in include
+
+Package:	nsd 
+Version:	4.1.14
+Current Vers:	4.1.14
+Maintainer:	Christos Zoulas
+Archive Site:	https://www.nlnetlabs.nl/svn/nsd/
+Home Page:	https://www.nlnetlabs.nl/projects/nsd/
+Mailing List:	https://open.nlnetlabs.nl/mailman/listinfo/nsd-users/	
+Responsible:	christos
+License:	BSD-like
+Location:	external/bsd/nsd/dist
 Notes:
 Use cleantags to import
 run configure and update config files in include
@@ -361,7 +375,7 @@ which nouveau2netbsd adds them).  For the next import, remember to add
 them!
 
 Package:	gmake
-Version:	3.81
+Version:	3.81 (Last GPlv2+ version)
 Current Vers:	4.0
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/make/
@@ -400,7 +414,7 @@ Notes:
 
 Package:	expat
 Version:	2.1.1
-Current Vers:	2.1.1
+Current Vers:	2.2.0
 Maintainer:	Expat Project
 Archive Site:	http://sourceforge.net/projects/expat/files/expat/
 Home Page:	http://www.libexpat.org/
@@ -413,7 +427,7 @@ Please use "expat" as the vendor tag for CVS imports.
 
 Package:	file
 Version:	5.22
-Current Vers:	5.22
+Current Vers:	5.29
 Maintainer:	Christos Zoulas <christos@zoulas.com>
 Archive Site:	ftp://ftp.astron.com/pub/file/
 Home Page:	http://www.darwinsys.com/file/
@@ -425,11 +439,11 @@ Notes:
 use file2netbsd
 
 Package:	flex
-Version:	2.6.0
-Current Vers:	2.6.0
+Version:	2.6.3
+Current Vers:	2.6.3
 Maintainer:	Will Estes <wlestes@users.sourceforge.net>
-Archive Site:	http://flex.sourceforge.net/
-Home Page:	http://flex.sourceforge.net/
+Archive Site:	https://github.com/westes/flex/releases
+Home Page:	https://github.com/westes/flex
 Mailing List:	http://lists.sourceforge.net/mailman/listinfo/flex-announce
 Responsible:
 License:	BSD-like
@@ -439,7 +453,7 @@ There is a flex2netbsd script to help newer imports.
 
 Package:	gcc
 Version:	4.8.5/5.4
-Current Vers:	4.8.5/5.4/6.2
+Current Vers:	4.8.5/5.4/6.3
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gcc/
 Home Page:	http://www.gnu.org/software/gcc/
@@ -470,7 +484,7 @@ Before importing a new version of external/gpl3/gcc:
 
 Package:	gdb
 Version:	7.12
-Current Vers:	7.12
+Current Vers:	7.12.1
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gdb/
 Home Page:	http://www.gnu.org/software/gdb/
@@ -992,8 +1006,8 @@ Location:	external/bsd/openpam/dist
 Notes:
 
 Package:	openresolv
-Version:	3.8.0
-Current Vers:	3.8.0
+Version:	3.9.0
+Current Vers:	3.9.0
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/openresolv/
 Home Page:	http://roy.marples.name/projects/openresolv/
@@ -1017,8 +1031,8 @@ Notes:
 Patch applied after OpenSSH import.
 
 Package:	OpenSSH
-Version:	7.3
-Current Vers:	7.3 / portable 7.3p1
+Version:	7.4
+Current Vers:	7.4 / portable 7.4p1
 Maintainer:	OpenSSH
 Archive Site:	http://www.openssh.com/ftp.html
 Home Page:	http://www.openssh.com/portable.html
@@ -1272,7 +1286,7 @@ original.
 
 Package:	sqlite
 Version:	3.13.0
-Current Vers:	3.15.2
+Current Vers:	3.16.2
 Maintainer:	Richard Hipp <drh@sqlite.org>
 Home Page:	http://www.sqlite.org
 Responsible:	joerg
@@ -1360,7 +1374,7 @@ purposes.
 
 Package:	tmux
 Version:	2.2
-Current Vers:	2.2
+Current Vers:	2.3
 Maintainer:	Nicholas Marriott <nicholas.marriott@gmail.com>
 Archive site:	https://github.com/tmux/tmux
 Home page:	http://tmux.github.io
@@ -1430,8 +1444,8 @@ Notes:
 See /usr/src/external/bsd/wpa/NetBSD-upgrade for update instructions.
 
 Package:	zlib
-Version:	1.2.3
-Current Vers:	1.2.8
+Version:	1.2.10
+Current Vers:	1.2.10
 Maintainer:	Jean-loup Gailly and Mark Adler <zlib@gzip.org>
 Archive Site:	http://www.zlib.net/
 Home Page:	http://www.zlib.net/
@@ -1441,6 +1455,7 @@ License:	BSD (3-clause)
 Location:	common/dist/zlib
 Notes:
 Imported to src/common/dist/zlib and shared by the kernel and userland.
+Remember to run cleantags
 
 Package:	services, protocols
 Version:	2013-02-21 (services), 2013-02-17 (protocols)

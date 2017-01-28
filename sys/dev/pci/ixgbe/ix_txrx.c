@@ -59,7 +59,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 /*$FreeBSD: head/sys/dev/ixgbe/ix_txrx.c 301538 2016-06-07 04:51:50Z sephe $*/
-/*$NetBSD: ix_txrx.c,v 1.12 2016/12/15 09:28:05 ozaki-r Exp $*/
+/*$NetBSD: ix_txrx.c,v 1.16 2017/01/19 06:56:33 msaitoh Exp $*/
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
@@ -516,6 +516,7 @@ ixgbe_xmit(struct tx_ring *txr, struct mbuf *m_head)
 	return 0;
 }
 
+
 /*********************************************************************
  *
  *  Allocate memory for tx_buffer structures. The tx_buffer stores all
@@ -567,7 +568,11 @@ ixgbe_allocate_transmit_buffers(struct tx_ring *txr)
 	return 0;
 fail:
 	/* We free all, it handles case where we are in the middle */
+#if 0 /* XXX was FreeBSD */
 	ixgbe_free_transmit_structures(adapter);
+#else
+	ixgbe_free_transmit_buffers(txr);
+#endif
 	return (error);
 }
 
@@ -693,7 +698,7 @@ ixgbe_free_transmit_buffers(struct tx_ring *txr)
 	struct ixgbe_tx_buf *tx_buffer;
 	int             i;
 
-	INIT_DEBUGOUT("ixgbe_free_transmit_ring: begin");
+	INIT_DEBUGOUT("ixgbe_free_transmit_buffers: begin");
 
 	if (txr->tx_buffers == NULL)
 		return;
@@ -1573,7 +1578,12 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 	rxr->next_to_refresh = 0;
 	rxr->lro_enabled = FALSE;
 	rxr->rx_copies.ev_count = 0;
+#if 0 /* NetBSD */
 	rxr->rx_bytes.ev_count = 0;
+#if 1	/* Fix inconsistency */
+	rxr->rx_packets.ev_count = 0;
+#endif
+#endif
 	rxr->vtag_strip = FALSE;
 
 	ixgbe_dmamap_sync(rxr->rxdma.dma_tag, rxr->rxdma.dma_map,
@@ -2387,4 +2397,3 @@ tx_fail:
 fail:
 	return (error);
 }
-

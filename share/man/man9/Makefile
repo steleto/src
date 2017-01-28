@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.398 2016/11/28 11:00:24 mlelstv Exp $
+#       $NetBSD: Makefile,v 1.401 2017/01/07 04:44:12 ozaki-r Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -59,8 +59,8 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	vattr.9 veriexec.9 vcons.9 vfs.9 vfs_hooks.9 vfsops.9 vfssubr.9 \
 	video.9 vme.9 \
 	vnfileops.9 vnode.9 vnodeops.9 vnsubr.9 \
-	ubc.9 usbd_status.9 usbdi.9 uvm.9 uvm_km.9 uvm_map.9 vmem.9 \
-	wapbl.9 wdc.9 workqueue.9 \
+	ubc.9 usbd_status.9 usbdi.9 uvm.9 uvm_hotplug.9 uvm_km.9 uvm_map.9 \
+	vmem.9 wapbl.9 wdc.9 workqueue.9 \
 	wscons.9 wsdisplay.9 wsfont.9 wskbd.9 wsmouse.9 \
 	xcall.9
 
@@ -645,6 +645,40 @@ MLINKS+=pfil.9 pfil_hook_get.9 \
 	pfil.9 pfil_head_unregister.9 \
 	pfil.9 pfil_head_get.9 \
 	pfil.9 pfil_run_hooks.9
+MLINKS+=pmap.9 pmap_init.9 \
+	pmap.9 pmap_virtual_space.9 \
+	pmap.9 pmap_steal_memory.9 \
+	pmap.9 pmap_kernel.9 \
+	pmap.9 pmap_create.9 \
+	pmap.9 pmap_destroy.9 \
+	pmap.9 pmap_reference.9 \
+	pmap.9 pmap_fork.9 \
+	pmap.9 pmap_resident_count.9 \
+	pmap.9 pmap_wired_count.9 \
+	pmap.9 pmap_growkernel.9 \
+	pmap.9 pmap_enter.9 \
+	pmap.9 pmap_remove.9 \
+	pmap.9 pmap_remove_all.9 \
+	pmap.9 pmap_protect.9 \
+	pmap.9 pmap_unwire.9 \
+	pmap.9 pmap_extract.9 \
+	pmap.9 pmap_kenter_pa.9 \
+	pmap.9 pmap_kremove.9 \
+	pmap.9 pmap_copy.9 \
+	pmap.9 pmap_update.9 \
+	pmap.9 pmap_activate.9 \
+	pmap.9 pmap_deactivate.9 \
+	pmap.9 pmap_zero_page.9 \
+	pmap.9 pmap_copy_page.9 \
+	pmap.9 pmap_page_protect.9 \
+	pmap.9 pmap_clear_modify.9 \
+	pmap.9 pmap_clear_reference.9 \
+	pmap.9 pmap_is_modified.9 \
+	pmap.9 pmap_is_referenced.9 \
+	pmap.9 pmap_phys_address.9 \
+	pmap.9 PMAP_MAP_POOLPAGE.9 \
+	pmap.9 PMAP_UNMAP_POOLPAGE.9 \
+	pmap.9 PMAP_PREFER.9
 MLINKS+=pmc.9 pmc_get_num_counters.9 \
 	pmc.9 pmc_get_counter_type.9 \
 	pmc.9 pmc_save_context.9 \
@@ -949,7 +983,6 @@ MLINKS+=vmem.9 vmem_alloc.9 \
 MLINKS+=vnode.9 vref.9 \
 	vnode.9 vrele.9 \
 	vnode.9 vrele_async.9 \
-	vnode.9 vget.9 \
 	vnode.9 vput.9 \
 	vnode.9 vhold.9 \
 	vnode.9 holdrele.9 \

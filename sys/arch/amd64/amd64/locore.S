@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.116 2016/12/09 17:57:24 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.118 2016/12/17 13:49:05 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -948,9 +948,9 @@ longmode_hi:
 	movw	%ax,%gs
 	movw	%ax,%fs
 
-	/* Set first_avail after the UAREA. */
+	/* Set first_avail after the DUMMY PAGE (see xen_locore). */
 	movq	%rsi,%rdi
-	addq	$USPACE,%rdi
+	addq	$(USPACE+PAGE_SIZE),%rdi
 	subq	$KERNBASE,%rdi	/* init_x86_64 wants a physical address */
 #endif	/* XEN */
 
@@ -1141,9 +1141,9 @@ skip_CR0:
 
 	/* The 32bit LWPs are handled differently. */
 	testl	$PCB_COMPAT32,PCB_FLAGS(%r14)
-	jne	lwp_64bit
+	jnz	lwp_32bit
 
-lwp_32bit:
+lwp_64bit:
 	/* Zero out %fs/%gs registers. */
 	xorq	%rax,%rax
 	movw	%ax,%fs
@@ -1170,7 +1170,7 @@ lwp_32bit:
 
 	jmp	switch_return
 
-lwp_64bit:
+lwp_32bit:
 	/* Reload %fs/%gs GDT descriptors. */
 	movq	CPUVAR(GDT),%rcx
 	movq	PCB_FS(%r14),%rax

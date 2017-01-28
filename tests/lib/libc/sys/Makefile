@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.45 2016/11/11 15:30:44 njoly Exp $
+# $NetBSD: Makefile,v 1.47 2017/01/14 03:59:58 pgoyette Exp $
 
 MKMAN=	no
 
@@ -83,6 +83,17 @@ LDADD.t_posix_fadvise+= -lrumpvfs -lrump -lrumpuser -lrump -lpthread
 .endif
 
 CPPFLAGS.t_lwp_create.c += -D_KERNTYPES
+
+FILES=		truncate_test.root_owned
+FILESBUILD=	yes
+FILESDIR=	${TESTSDIR}
+FILESMODE=	0600
+FILESOWNER=	root
+FILESGRP=	wheel
+
+CLEANFILES=   truncate_test.root_owned
+truncate_test.root_owned:
+	dd if=/dev/null bs=1 count=1 of=${.TARGET}
 
 WARNS=			4
 

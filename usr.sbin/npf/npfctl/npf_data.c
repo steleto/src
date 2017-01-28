@@ -1,7 +1,7 @@
-/*	$NetBSD: npf_data.c,v 1.25 2014/02/13 03:34:40 rmind Exp $	*/
+/*	$NetBSD: npf_data.c,v 1.28 2017/01/19 20:18:17 rmind Exp $	*/
 
 /*-
- * Copyright (c) 2009-2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2009-2017 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,11 +31,12 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: npf_data.c,v 1.25 2014/02/13 03:34:40 rmind Exp $");
+__RCSID("$NetBSD: npf_data.c,v 1.28 2017/01/19 20:18:17 rmind Exp $");
+
+#include <stdlib.h>
+#include <stddef.h>
 
 #include <sys/types.h>
-#include <sys/null.h>
-
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
@@ -43,11 +44,10 @@ __RCSID("$NetBSD: npf_data.c,v 1.25 2014/02/13 03:34:40 rmind Exp $");
 #include <netinet/ip_icmp.h>
 #define ICMP6_STRINGS
 #include <netinet/icmp6.h>
+#define	__FAVOR_BSD
 #include <netinet/tcp.h>
 #include <net/if.h>
 
-#include <stdlib.h>
-#include <stddef.h>
 #include <string.h>
 #include <ctype.h>
 #include <err.h>
@@ -129,6 +129,12 @@ npfctl_copy_address(sa_family_t fam, npf_addr_t *addr, const void *ptr)
 	}
 }
 
+/*
+ * npfctl_parse_fam_addr: parse a given a string and return the address
+ * family with the actual address as npf_addr_t.
+ *
+ * => Return true on success; false otherwise.
+ */
 static bool
 npfctl_parse_fam_addr(const char *name, sa_family_t *fam, npf_addr_t *addr)
 {
@@ -154,41 +160,65 @@ npfctl_parse_fam_addr(const char *name, sa_family_t *fam, npf_addr_t *addr)
 	return true;
 }
 
+/*
+ * npfctl_parse_mask: parse a given string which represents a mask and
+ * can either be in quad-dot or CIDR block notation; validates the mask
+ * given the family.
+ *
+ * => Returns true if mask is valid (or is NULL); false otherwise.
+ */
 static bool
 npfctl_parse_mask(const char *s, sa_family_t fam, npf_netmask_t *mask)
 {
+	unsigned max_mask = NPF_MAX_NETMASK;
 	char *ep = NULL;
 	npf_addr_t addr;
 	uint8_t *ap;
 
-	if (s) {
-		errno = 0;
-		*mask = (npf_netmask_t)strtol(s, &ep, 0);
-		if (*ep == '\0' && s != ep && errno != ERANGE)
-			return true;
-		if (!npfctl_parse_fam_addr(s, &fam, &addr))
-			return false;
-	}
-
 	assert(fam == AF_INET || fam == AF_INET6);
-	*mask = NPF_NO_NETMASK;
-	if (ep == NULL) {
+	if (!s) {
+		/* No mask. */
+		*mask = NPF_NO_NETMASK;
 		return true;
 	}
 
-	ap = addr.s6_addr + (*mask / 8) - 1;
-	while (ap >= addr.s6_addr) {
+	errno = 0;
+	*mask = (npf_netmask_t)strtol(s, &ep, 0);
+	if (*ep == '\0' && s != ep && errno != ERANGE) {
+		/* Just a number -- CIDR notation. */
+		goto check;
+	}
+
+	/* Other characters: try to parse a full address. */
+	if (!npfctl_parse_fam_addr(s, &fam, &addr)) {
+		return false;
+	}
+
+	/* Convert the address to CIDR block number. */
+	ap = addr.word8 + (*mask / 8) - 1;
+	while (ap >= addr.word8) {
 		for (int j = 8; j > 0; j--) {
 			if (*ap & 1)
-				return true;
+				goto check;
 			*ap >>= 1;
 			(*mask)--;
 			if (*mask == 0)
-				return true;
+				goto check;
 		}
 		ap--;
 	}
+	*mask = NPF_NO_NETMASK;
 	return true;
+check:
+	switch (fam) {
+	case AF_INET:
+		max_mask = 32;
+		break;
+	case AF_INET6:
+		max_mask = 128;
+		break;
+	}
+	return *mask <= max_mask;
 }
 
 /*
@@ -202,6 +232,7 @@ npfctl_parse_fam_addr_mask(const char *addr, const char *mask,
     unsigned long *nummask)
 {
 	fam_addr_mask_t fam;
+	char buf[32];
 
 	memset(&fam, 0, sizeof(fam));
 
@@ -209,12 +240,14 @@ npfctl_parse_fam_addr_mask(const char *addr, const char *mask,
 		return NULL;
 
 	/*
-	 * Note: both mask and nummask may be NULL.  In such case,
-	 * npfctl_parse_mask() will handle and will set full mask.
+	 * Mask may be NULL.  In such case, "no mask" value will be set.
 	 */
 	if (nummask) {
-		fam.fam_mask = *nummask;
-	} else if (!npfctl_parse_mask(mask, fam.fam_family, &fam.fam_mask)) {
+		/* Let npfctl_parse_mask() validate the number. */
+		snprintf(buf, sizeof(buf), "%lu", *nummask);
+		mask = buf;
+	}
+	if (!npfctl_parse_mask(mask, fam.fam_family, &fam.fam_mask)) {
 		return NULL;
 	}
 	return npfvar_create_element(NPFVAR_FAM, &fam, sizeof(fam));
@@ -249,17 +282,16 @@ npfctl_parse_port_range(in_port_t s, in_port_t e)
 }
 
 npfvar_t *
-npfctl_parse_port_range_variable(const char *v)
+npfctl_parse_port_range_variable(const char *v, npfvar_t *vp)
 {
-	npfvar_t *vp = npfvar_lookup(v);
 	size_t count = npfvar_get_count(vp);
 	npfvar_t *pvp = npfvar_create();
 	port_range_t *pr;
-	in_port_t p;
 
 	for (size_t i = 0; i < count; i++) {
 		int type = npfvar_get_type(vp, i);
 		void *data = npfvar_get_data(vp, type, i);
+		in_port_t p;
 
 		switch (type) {
 		case NPFVAR_IDENTIFIER:
@@ -277,8 +309,13 @@ npfctl_parse_port_range_variable(const char *v)
 			npfvar_add_elements(pvp, npfctl_parse_port_range(p, p));
 			break;
 		default:
-			yyerror("wrong variable '%s' type '%s' for port range",
-			    v, npfvar_type(type));
+			if (v) {
+				yyerror("wrong variable '%s' type '%s' "
+				    "for port range", v, npfvar_type(type));
+			} else {
+				yyerror("wrong element '%s' in the "
+				    "inline list", npfvar_type(type));
+			}
 			npfvar_destroy(pvp);
 			return NULL;
 		}
@@ -322,11 +359,9 @@ npfctl_parse_ifnet(const char *ifname, const int family)
 		memset(&fam, 0, sizeof(fam));
 		fam.fam_family = sa->sa_family;
 		fam.fam_ifindex = ifna.ifna_index;
+		fam.fam_mask = NPF_NO_NETMASK;
 
 		if (!npfctl_copy_address(sa->sa_family, &fam.fam_addr, sa))
-			goto out;
-
-		if (!npfctl_parse_mask(NULL, fam.fam_family, &fam.fam_mask))
 			goto out;
 
 		if (!npfvar_add_element(vpa, NPFVAR_FAM, &fam, sizeof(fam)))
@@ -456,6 +491,7 @@ npfctl_parse_tcpflag(const char *s)
 uint8_t
 npfctl_icmptype(int proto, const char *type)
 {
+#ifdef __NetBSD__
 	uint8_t ul;
 
 	switch (proto) {
@@ -475,7 +511,7 @@ npfctl_icmptype(int proto, const char *type)
 	default:
 		assert(false);
 	}
-
+#endif
 	yyerror("unknown icmp-type %s", type);
 	return ~0;
 }
@@ -483,6 +519,7 @@ npfctl_icmptype(int proto, const char *type)
 uint8_t
 npfctl_icmpcode(int proto, uint8_t type, const char *code)
 {
+#ifdef __NetBSD__
 	const char * const *arr;
 
 	switch (proto) {
@@ -565,6 +602,7 @@ npfctl_icmpcode(int proto, uint8_t type, const char *code)
 		if (strcmp(arr[ul], code) == 0)
 			return ul;
 	}
+#endif
 	yyerror("unknown code %s for icmp-type %d", code, type);
 	return ~0;
 }

@@ -1,4 +1,4 @@
-# $NetBSD: md.cats,v 1.54 2016/09/24 21:57:38 mrg Exp $
+# $NetBSD: md.cats,v 1.56 2017/01/05 02:22:19 christos Exp $
 ./usr/X11R7/bin/X					-unknown-	xorg
 ./usr/X11R7/bin/Xorg					-unknown-	xorg
 ./usr/X11R7/bin/cvt					-unknown-	xorg

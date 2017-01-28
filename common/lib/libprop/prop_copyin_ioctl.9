@@ -1,4 +1,4 @@
-.\"	$NetBSD: prop_copyin_ioctl.9,v 1.9 2011/01/20 10:47:33 wiz Exp $
+.\"	$NetBSD: prop_copyin_ioctl.9,v 1.11 2017/01/15 22:14:22 wiz Exp $
 .\"
 .\" Copyright (c) 2006, 2009 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -159,6 +159,9 @@ and
 .Fn prop_dictionary_copyin_ioctl
 will fail if:
 .Bl -tag -width Er
+.It Bq Er E2BIG
+The object being copied is larger than an arbitrarily established limit
+(currently set to 128Kbytes).
 .It Bq Er EFAULT
 Bad address
 .It Bq Er EIO

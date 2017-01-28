@@ -1,4 +1,4 @@
-/*	$NetBSD: in_pcb.c,v 1.172 2016/12/12 03:55:57 ozaki-r Exp $	*/
+/*	$NetBSD: in_pcb.c,v 1.174 2017/01/23 09:14:24 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -93,7 +93,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.172 2016/12/12 03:55:57 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.174 2017/01/23 09:14:24 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -103,7 +103,6 @@ __KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.172 2016/12/12 03:55:57 ozaki-r Exp $")
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/mbuf.h>
-#include <sys/protosw.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/ioctl.h>
@@ -193,9 +192,7 @@ in_pcballoc(struct socket *so, void *v)
 	struct inpcb *inp;
 	int s;
 
-	s = splnet();
 	inp = pool_get(&inpcb_pool, PR_NOWAIT);
-	splx(s);
 	if (inp == NULL)
 		return (ENOBUFS);
 	memset(inp, 0, sizeof(*inp));
@@ -209,9 +206,7 @@ in_pcballoc(struct socket *so, void *v)
 	if (ipsec_enabled) {
 		int error = ipsec_init_pcbpolicy(so, &inp->inp_sp);
 		if (error != 0) {
-			s = splnet();
 			pool_put(&inpcb_pool, inp);
-			splx(s);
 			return error;
 		}
 	}

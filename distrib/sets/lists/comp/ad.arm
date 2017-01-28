@@ -1,4 +1,4 @@
-# $NetBSD: ad.arm,v 1.76 2016/11/01 14:45:25 skrll Exp $
+# $NetBSD: ad.arm,v 1.78 2017/01/11 12:02:24 joerg Exp $
 ./usr/include/acorn26				comp-c-include
 ./usr/include/acorn26/ansi.h			comp-obsolete		obsolete
 ./usr/include/acorn26/aout_machdep.h		comp-obsolete		obsolete
@@ -115,7 +115,7 @@
 ./usr/include/arm/arm32				comp-c-include
 ./usr/include/arm/arm32/bus.h			comp-obsolete		obsolete
 ./usr/include/arm/arm32/frame.h			comp-c-include
-./usr/include/arm/arm32/katelib.h		comp-c-include		obsolete
+./usr/include/arm/arm32/katelib.h		comp-obsolete		obsolete
 ./usr/include/arm/arm32/param.h			comp-c-include
 ./usr/include/arm/arm32/pmap.h			comp-c-include
 ./usr/include/arm/arm32/psl.h			comp-c-include
@@ -296,8 +296,10 @@
 ./usr/include/cats/wchar_limits.h		comp-obsolete		obsolete
 ./usr/include/clang-3.6/arm_acle.h		comp-obsolete		obsolete
 ./usr/include/clang-3.6/arm_neon.h		comp-obsolete		obsolete
-./usr/include/clang-3.8/arm_acle.h		comp-c-include		llvm
-./usr/include/clang-3.8/arm_neon.h		comp-c-include		llvm
+./usr/include/clang-3.8/arm_acle.h		comp-obsolete		obsolete
+./usr/include/clang-3.8/arm_neon.h		comp-obsolete		obsolete
+./usr/include/clang-4.0/arm_acle.h		comp-c-include		llvm
+./usr/include/clang-4.0/arm_neon.h		comp-c-include		llvm
 ./usr/include/epoc32				comp-c-include
 ./usr/include/epoc32/ansi.h			comp-obsolete		obsolete
 ./usr/include/epoc32/aout_machdep.h		comp-obsolete		obsolete
@@ -393,13 +395,13 @@
 ./usr/include/evbarm/varargs.h			comp-obsolete		obsolete
 ./usr/include/evbarm/vmparam.h			comp-obsolete		obsolete
 ./usr/include/evbarm/wchar_limits.h		comp-obsolete		obsolete
-./usr/include/gcc-4.5/arm_neon.h		comp-c-include		obsolete
-./usr/include/gcc-4.5/mmintrin.h		comp-c-include		obsolete
-./usr/include/gcc-4.5/tgmath.h			comp-c-include		obsolete
-./usr/include/gcc-4.8/arm_neon.h		comp-c-include		obsolete
-./usr/include/gcc-4.8/mmintrin.h		comp-c-include		obsolete
-./usr/include/gcc-4.8/tgmath.h			comp-c-include		obsolete
-./usr/include/gcc-4.8/unwind-arm-common.h	comp-c-include		obsolete
+./usr/include/gcc-4.5/arm_neon.h		comp-obsolete		obsolete
+./usr/include/gcc-4.5/mmintrin.h		comp-obsolete		obsolete
+./usr/include/gcc-4.5/tgmath.h			comp-obsolete		obsolete
+./usr/include/gcc-4.8/arm_neon.h		comp-obsolete		obsolete
+./usr/include/gcc-4.8/mmintrin.h		comp-obsolete		obsolete
+./usr/include/gcc-4.8/tgmath.h			comp-obsolete		obsolete
+./usr/include/gcc-4.8/unwind-arm-common.h	comp-obsolete		obsolete
 ./usr/include/gcc-5/arm_acle.h			comp-c-include		gcccmds,gcc=53
 ./usr/include/gcc-5/arm_neon.h			comp-c-include		gcccmds,gcc=53
 ./usr/include/gcc-5/mmintrin.h			comp-c-include		gcccmds,gcc=53

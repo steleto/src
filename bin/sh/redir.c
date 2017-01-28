@@ -1,4 +1,4 @@
-/*	$NetBSD: redir.c,v 1.47 2016/05/12 13:31:37 kre Exp $	*/
+/*	$NetBSD: redir.c,v 1.49 2017/01/21 23:03:36 christos Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,12 +37,13 @@
 #if 0
 static char sccsid[] = "@(#)redir.c	8.2 (Berkeley) 5/4/95";
 #else
-__RCSID("$NetBSD: redir.c,v 1.47 2016/05/12 13:31:37 kre Exp $");
+__RCSID("$NetBSD: redir.c,v 1.49 2017/01/21 23:03:36 christos Exp $");
 #endif
 #endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/param.h>	/* PIPE_BUF */
+#include <sys/stat.h>
 #include <signal.h>
 #include <string.h>
 #include <fcntl.h>
@@ -305,7 +306,7 @@ openredirect(union node *redir, char memory[10], int flags)
 			    memory[redir->ndup.dupfd])
 				memory[fd] = 1;
 			else if (copyfd(redir->ndup.dupfd, fd,
-			    (flags&(REDIR_PUSH|REDIR_KEEP)) == REDIR_PUSH) < 0)
+			    (flags & REDIR_KEEP) == 0) < 0)
 				error("Redirect (from %d to %d) failed: %s",
 				    redir->ndup.dupfd, fd, strerror(errno));
 		} else

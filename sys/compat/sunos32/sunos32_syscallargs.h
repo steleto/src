@@ -1,4 +1,4 @@
-/* $NetBSD: sunos32_syscallargs.h,v 1.29 2015/09/24 14:43:50 christos Exp $ */
+/* $NetBSD: sunos32_syscallargs.h,v 1.31 2017/01/16 17:43:05 christos Exp $ */
 
 /*
  * System call argument lists.

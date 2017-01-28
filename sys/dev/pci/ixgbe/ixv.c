@@ -31,7 +31,7 @@
 
 ******************************************************************************/
 /*$FreeBSD: head/sys/dev/ixgbe/if_ixv.c 302384 2016-07-07 03:39:18Z sbruno $*/
-/*$NetBSD: ixv.c,v 1.29 2016/12/05 08:50:29 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.33 2017/01/19 09:42:08 msaitoh Exp $*/
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
@@ -253,7 +253,7 @@ ixv_lookup(const struct pci_attach_args *pa)
 	pcireg_t subid;
 	ixgbe_vendor_info_t *ent;
 
-	INIT_DEBUGOUT("ixv_probe: begin");
+	INIT_DEBUGOUT("ixv_lookup: begin");
 
 	if (PCI_VENDOR(pa->pa_id) != IXGBE_INTEL_VENDOR_ID)
 		return NULL;
@@ -637,7 +637,7 @@ ixv_ioctl(struct ifnet * ifp, u_long command, void *data)
 		IOCTL_DEBUGOUT("ioctl: SIOCSIFMTU (Set Interface MTU)");
 		break;
 	default:
-		IOCTL_DEBUGOUT1("ioctl: UNKNOWN (0x%X)\n", (int)command);
+		IOCTL_DEBUGOUT1("ioctl: UNKNOWN (0x%X)", (int)command);
 		break;
 	}
 
@@ -1348,7 +1348,7 @@ ixv_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	tag = adapter->osdep.tag;
 
 	if (pci_msix_alloc_exact(pa,
-		&adapter->osdep.intrs, IXG_MSIX_NINTR) != 0)
+		&adapter->osdep.intrs, IXG_MAX_NINTR) != 0)
 		return (ENXIO);
 
 	kcpuset_create(&affinity, false);
@@ -1457,16 +1457,24 @@ ixv_setup_msix(struct adapter *adapter)
 	device_t dev = adapter->dev;
 	int want, msgs;
 
-	/*
-	** Want two vectors: one for a queue,
-	** plus an additional for mailbox.
-	*/
+	/* Must have at least 2 MSIX vectors */
 	msgs = pci_msix_count(adapter->osdep.pc, adapter->osdep.tag);
-	if (msgs < IXG_MSIX_NINTR) {
+	if (msgs < 2) {
 		aprint_error_dev(dev,"MSIX config error\n");
 		return (ENXIO);
 	}
-	want = MIN(msgs, IXG_MSIX_NINTR);
+	msgs = MIN(msgs, IXG_MAX_NINTR);
+
+	/*
+	** Want vectors for the queues,
+	** plus an additional for mailbox.
+	*/
+	want = adapter->num_queues + 1;
+	if (want > msgs) {
+		want = msgs;
+		adapter->num_queues = msgs - 1;
+	} else
+		msgs = want;
 
 	adapter->msix_mem = (void *)1; /* XXX */
 	aprint_normal_dev(dev,
@@ -1513,7 +1521,6 @@ map_err:
 
 	/* Pick up the tuneable queues */
 	adapter->num_queues = ixv_num_queues;
-
 	adapter->hw.back = adapter;
 
 	/*
