@@ -257,6 +257,13 @@ static ACPI_STATUS	valz_acpi_hci_set(struct valz_acpi_softc *, uint32_t,
 static ACPI_STATUS	sci_open(struct valz_acpi_softc *);
 static ACPI_STATUS	sci_close(struct valz_acpi_softc *);
 
+static ACPI_STATUS	valz_acpi_lcd_brightness_get(struct valz_acpi_softc *,
+						     uint32_t *);
+static ACPI_STATUS	valz_acpi_lcd_brightness_set(struct valz_acpi_softc *,
+						     uint32_t);
+static ACPI_STATUS	valz_acpi_lcd_brightness_down(
+					struct valz_acpi_softc *);
+static ACPI_STATUS	valz_acpi_lcd_brightness_up(struct valz_acpi_softc *);
 static ACPI_STATUS	valz_acpi_touchpad_toggle(struct valz_acpi_softc *);
 static ACPI_STATUS	valz_acpi_lcd_backlight_toggle(
 					struct valz_acpi_softc *sc);
@@ -359,6 +366,12 @@ valz_acpi_event(void *arg)
 			&value, &result);
 		if (ACPI_SUCCESS(rv) && result == 0) {
 			switch (value) {
+			case FN_F6_PRESS:
+				valz_acpi_lcd_brightness_down(sc);
+				break;
+			case FN_F7_PRESS:
+				valz_acpi_lcd_brightness_up(sc);
+				break;
 			case FN_F9_PRESS:
 				valz_acpi_touchpad_toggle(sc);
 				break;
@@ -549,6 +562,80 @@ sci_close(struct valz_acpi_softc *sc)
 			break;
 		}
 	}
+
+	return rv;
+}
+
+/*
+ * Get LCD brightness
+ */
+static ACPI_STATUS
+valz_acpi_lcd_brightness_get(struct valz_acpi_softc *sc, uint32_t *brightness)
+{
+	ACPI_STATUS rv;
+	uint32_t result;
+
+	rv = valz_acpi_hci_get(sc, HCI_GET, HCI_LCD_BRIGHTNESS, brightness,
+				&result);
+	if (ACPI_FAILURE(rv))
+		aprint_error_dev(sc->sc_dev,
+				"Cannot get HCI LCD brightness status: %s\n",
+				AcpiFormatException(rv));
+
+	*brightness >>= HCI_LCD_BRIGHTNESS_SFT;
+
+	return rv;
+}
+
+/*
+ * Set LCD brightness
+ */
+static ACPI_STATUS
+valz_acpi_lcd_brightness_set(struct valz_acpi_softc *sc, uint32_t brightness)
+{
+	ACPI_STATUS rv;
+	uint32_t result;
+
+	brightness <<= HCI_LCD_BRIGHTNESS_SFT;
+
+	rv = valz_acpi_hci_set(sc, HCI_SET, HCI_LCD_BRIGHTNESS, brightness,
+				&result);
+	if (ACPI_FAILURE(rv))
+		aprint_error_dev(sc->sc_dev,
+				"Cannot set HCI LCD brightness status: %s\n",
+				AcpiFormatException(rv));
+
+	return rv;
+}
+
+/*
+ * Down LCD brightness
+ */
+static ACPI_STATUS
+valz_acpi_lcd_brightness_down(struct valz_acpi_softc *sc)
+{
+	ACPI_STATUS rv;
+	uint32_t brightness;
+
+	rv = valz_acpi_lcd_brightness_get(sc, &brightness);
+	if (ACPI_SUCCESS(rv) && brightness > HCI_LCD_BRIGHTNESS_MIN)
+		rv = valz_acpi_lcd_brightness_set(sc, brightness - 1);
+
+	return rv;
+}
+
+/*
+ * Up LCD brightness
+ */
+static ACPI_STATUS
+valz_acpi_lcd_brightness_up(struct valz_acpi_softc *sc)
+{
+	ACPI_STATUS rv;
+	uint32_t brightness;
+
+	rv = valz_acpi_lcd_brightness_get(sc, &brightness);
+	if (ACPI_SUCCESS(rv) && brightness < HCI_LCD_BRIGHTNESS_MAX)
+		rv = valz_acpi_lcd_brightness_set(sc, brightness + 1);
 
 	return rv;
 }
