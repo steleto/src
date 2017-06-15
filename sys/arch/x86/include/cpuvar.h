@@ -1,4 +1,4 @@
-/* 	$NetBSD: cpuvar.h,v 1.48 2017/01/13 05:26:42 christos Exp $ */
+/* 	$NetBSD: cpuvar.h,v 1.50 2017/05/23 08:54:39 nonaka Exp $ */
 
 /*-
  * Copyright (c) 2000, 2007 The NetBSD Foundation, Inc.
@@ -101,8 +101,7 @@ struct cpufeature_attach_args {
 #include "opt_multiprocessor.h"
 #endif /* defined(_KERNEL_OPT) */
 
-int x86_ipi(int, int, int);
-void x86_self_ipi(int);
+extern int (*x86_ipi)(int, int, int);
 int x86_ipi_init(int);
 int x86_ipi_startup(int, int);
 void x86_errata(void);

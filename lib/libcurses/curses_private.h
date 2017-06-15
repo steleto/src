@@ -1,4 +1,4 @@
-/*	$NetBSD: curses_private.h,v 1.60 2017/01/24 17:27:30 roy Exp $	*/
+/*	$NetBSD: curses_private.h,v 1.62 2017/01/31 09:17:53 roy Exp $	*/
 
 /*-
  * Copyright (c) 1998-2000 Brett Lymn

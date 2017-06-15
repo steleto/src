@@ -1,4 +1,4 @@
-/*	$NetBSD: panic.c,v 1.1 2017/01/24 11:09:14 nonaka Exp $	*/
+/*	$NetBSD: panic.c,v 1.4 2017/02/11 10:15:55 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -47,13 +47,15 @@ Panic(
 	va_end(args);
 	reboot();
 	/*NOTREACHED*/
+	__unreachable();
 }
 
-void
+__dead void
 reboot(void)
 {
 
-	WaitForSingleEvent(ST->ConIn->WaitForKey, 0);
+	if (!efi_cleanuped)
+		WaitForSingleEvent(ST->ConIn->WaitForKey, 0);
 
 	uefi_call_wrapper(RT->ResetSystem, 4, EfiResetCold, EFI_SUCCESS,
 	    0, NULL);
@@ -61,7 +63,7 @@ reboot(void)
 		continue;
 }
 
-void
+__dead void
 _rtt(void)
 {
 

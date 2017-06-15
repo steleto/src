@@ -1,10 +1,10 @@
-/*	$NetBSD: pcidevs.h,v 1.1271 2017/01/16 04:45:06 msaitoh Exp $	*/
+/*	$NetBSD: pcidevs.h,v 1.1282 2017/06/06 05:39:28 msaitoh Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	NetBSD: pcidevs,v 1.1279 2017/01/16 04:44:38 msaitoh Exp
+ *	NetBSD: pcidevs,v 1.1290 2017/06/06 05:39:06 msaitoh Exp
  */
 
 /*
@@ -639,6 +639,7 @@
 #define	PCI_VENDOR_FREESCALE	0x1957		/* Freescale Semiconductor */
 #define	PCI_VENDOR_ATTANSIC	0x1969		/* Attansic Technologies */
 #define	PCI_VENDOR_JMICRON	0x197b		/* JMicron Technology */
+#define	PCI_VENDOR_HUAWEI	0x19e5		/* Huaewi Technology */
 #define	PCI_VENDOR_ASPEED	0x1a03		/* ASPEED Technology */
 #define	PCI_VENDOR_AWT	0x1a3b		/* AWT */
 #define	PCI_VENDOR_EVE	0x1adb		/* EVE */
@@ -967,6 +968,32 @@
 #define	PCI_PRODUCT_AMD_AMD64_F11_DRAM	0x1302		/* AMD64 Family11h DRAM Configuration */
 #define	PCI_PRODUCT_AMD_AMD64_F11_MISC	0x1303		/* AMD64 Family11h Miscellaneous Configuration */
 #define	PCI_PRODUCT_AMD_AMD64_F11_LINK	0x1304		/* AMD64 Family11h Link Configuration */
+#define	PCI_PRODUCT_AMD_F15_10_PF_0	0x1400		/* Family15h Processor Function 0 */
+#define	PCI_PRODUCT_AMD_F15_10_PF_1	0x1401		/* Family15h Processor Function 1 */
+#define	PCI_PRODUCT_AMD_F15_10_PF_2	0x1402		/* Family15h Processor Function 2 */
+#define	PCI_PRODUCT_AMD_F15_10_PF_3	0x1403		/* Family15h Processor Function 3 */
+#define	PCI_PRODUCT_AMD_F15_10_PF_4	0x1404		/* Family15h Processor Function 4 */
+#define	PCI_PRODUCT_AMD_F15_10_PF_5	0x1405		/* Family15h Processor Function 5 */
+#define	PCI_PRODUCT_AMD_F15_10_RC	0x1410		/* Family15h Root Complex */
+#define	PCI_PRODUCT_AMD_F15_10_RP_2	0x1412		/* Family15h Root Port */
+#define	PCI_PRODUCT_AMD_F15_10_RP_3	0x1413		/* Family15h Root Port */
+#define	PCI_PRODUCT_AMD_F15_10_RP_4	0x1414		/* Family15h Root Port */
+#define	PCI_PRODUCT_AMD_F15_10_RP_5	0x1415		/* Family15h Root Port */
+#define	PCI_PRODUCT_AMD_F15_10_RP_6	0x1416		/* Family15h Root Port */
+#define	PCI_PRODUCT_AMD_F15_10_RP_7	0x1417		/* Family15h Root Port */
+#define	PCI_PRODUCT_AMD_F15_10_RP_8	0x1418		/* Family15h Root Port */
+#define	PCI_PRODUCT_AMD_F15_10_IOMMU	0x1419		/* Family15h IOMMU */
+#define	PCI_PRODUCT_AMD_F15_30_PF_0	0x141a		/* Family15h Processor Function 0 */
+#define	PCI_PRODUCT_AMD_F15_30_PF_1	0x141b		/* Family15h Processor Function 1 */
+#define	PCI_PRODUCT_AMD_F15_30_PF_2	0x141c		/* Family15h Processor Function 2 */
+#define	PCI_PRODUCT_AMD_F15_30_PF_3	0x141d		/* Family15h Processor Function 3 */
+#define	PCI_PRODUCT_AMD_F15_30_PF_4	0x141e		/* Family15h Processor Function 4 */
+#define	PCI_PRODUCT_AMD_F15_30_PF_5	0x141f		/* Family15h Processor Function 5 */
+#define	PCI_PRODUCT_AMD_F15_30_RC	0x1422		/* Family15h Root Complex */
+#define	PCI_PRODUCT_AMD_F15_30_IOMMU	0x1423		/* Family15h IOMMU */
+#define	PCI_PRODUCT_AMD_F15_30_HB	0x1424		/* Family15h Host Bridge */
+#define	PCI_PRODUCT_AMD_F15_30_RP_5	0x1425		/* Family15h Root Port */
+#define	PCI_PRODUCT_AMD_F15_30_RP_6	0x1426		/* Family15h Root Port */
 #define	PCI_PRODUCT_AMD_F16_GPPB	0x1439		/* Family16h GPP Bridge */
 #define	PCI_PRODUCT_AMD_F14_RC	0x1510		/* Family14h Root Complex */
 #define	PCI_PRODUCT_AMD_F16_HT	0x1530		/* Family16h HyperTransport Configuration */
@@ -981,6 +1008,18 @@
 #define	PCI_PRODUCT_AMD_F16_30_IOMMU	0x1567		/* Family16h IOMMU */
 #define	PCI_PRODUCT_AMD_F16_HB	0x1568		/* Family16h Host Bridge */
 #define	PCI_PRODUCT_AMD_F16_30_HB	0x156b		/* Family16h Host Bridge */
+#define	PCI_PRODUCT_AMD_F15_60_PF_0	0x1570		/* Family15h Processor Function 0 */
+#define	PCI_PRODUCT_AMD_F15_60_PF_1	0x1571		/* Family15h Processor Function 1 */
+#define	PCI_PRODUCT_AMD_F15_60_PF_2	0x1572		/* Family15h Processor Function 2 */
+#define	PCI_PRODUCT_AMD_F15_60_PF_3	0x1573		/* Family15h Processor Function 3 */
+#define	PCI_PRODUCT_AMD_F15_60_PF_4	0x1574		/* Family15h Processor Function 4 */
+#define	PCI_PRODUCT_AMD_F15_60_PF_5	0x1575		/* Family15h Processor Function 5 */
+#define	PCI_PRODUCT_AMD_F15_60_RC	0x1576		/* Family15h Root Complex */
+#define	PCI_PRODUCT_AMD_F15_60_IOMMU	0x1577		/* Family15h IOMMU */
+#define	PCI_PRODUCT_AMD_F15_60_PSP	0x1578		/* Family15h PSP */
+#define	PCI_PRODUCT_AMD_F15_60_AC	0x157a		/* Family15h Audio Controller */
+#define	PCI_PRODUCT_AMD_F15_60_HB	0x157b		/* Family15h Host Bridge */
+#define	PCI_PRODUCT_AMD_F15_60_RP	0x157c		/* Family15h Root Port */
 #define	PCI_PRODUCT_AMD_F16_30_HT	0x1580		/* Family16h HyperTransport Configuration */
 #define	PCI_PRODUCT_AMD_F16_30_ADDR	0x1581		/* Family16h Address Map Configuration */
 #define	PCI_PRODUCT_AMD_F16_30_DRAM	0x1582		/* Family16h DRAM Configuration */
@@ -1803,6 +1842,9 @@
 #define	PCI_PRODUCT_BROADCOM_BCM57785	0x16b5		/* BCM57785 Integrated Gigabit Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM57795	0x16b6		/* BCM57795 10/100/1000 Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM57782	0x16b7		/* BCM57782 10/100/1000 Ethernet */
+#define	PCI_PRODUCT_BROADCOM_SDMMC	0x16bc		/* BCM577x5 SDMMC */
+#define	PCI_PRODUCT_BROADCOM_MS	0x16be		/* BCM577x5 Memstick */
+#define	PCI_PRODUCT_BROADCOM_XD	0x16bf		/* BCM577x5 xD */
 #define	PCI_PRODUCT_BROADCOM_BCM5702_ALT	0x16c6		/* BCM5702 10/100/1000 Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM5703_ALT	0x16c7		/* BCM5703 10/100/1000 Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM5781	0x16dd		/* BCM5781 Integrated Gigabit Ethernet */
@@ -1810,7 +1852,7 @@
 #define	PCI_PRODUCT_BROADCOM_BCM5753M	0x16fd		/* BCM5753M 10/100/1000 Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM5753F	0x16fe		/* BCM5753F 10/100 Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM5903M	0x16ff		/* BCM5903M 10/100/1000 Ethernet */
-#define	PCI_PRODUCT_BROADCOM_BCM4401_B0	0x170c		/* BCM4401-B0 10/100 Ethernet */
+#define	PCI_PRODUCT_BROADCOM_BCM4401_B1	0x170c		/* BCM4401-B1 10/100 Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM5901	0x170d		/* BCM5901 10/100 Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM5901A2	0x170e		/* BCM5901A 10/100 Ethernet */
 #define	PCI_PRODUCT_BROADCOM_BCM5906	0x1712		/* BCM5906 NetLink Fast Ethernet */
@@ -1839,6 +1881,8 @@
 #define	PCI_PRODUCT_BROADCOM_BCM43227	0x4358		/* BCM43227 2.4GHz 802.11 */
 #define	PCI_PRODUCT_BROADCOM_BCM43228	0x4359		/* BCM43228 Dualband 802.11 */
 #define	PCI_PRODUCT_BROADCOM_BCM4401	0x4401		/* BCM4401 10/100 Ethernet */
+#define	PCI_PRODUCT_BROADCOM_BCM4401_B0	0x4401		/* BCM4401-B0 10/100 Ethernet */
+#define	PCI_PRODUCT_BROADCOM_BCM4727	0x4727		/* BCM4727 802.11b/g/n */
 #define	PCI_PRODUCT_BROADCOM_5801	0x5801		/* 5801 Security Processor */
 #define	PCI_PRODUCT_BROADCOM_5802	0x5802		/* 5802 Security Processor */
 #define	PCI_PRODUCT_BROADCOM_5805	0x5805		/* 5805 Security Processor */
@@ -2549,6 +2593,9 @@
 #define	PCI_PRODUCT_HITACHI_SWC	0x0101		/* MSVCC01/02/03/04 Video Capture Cards */
 #define	PCI_PRODUCT_HITACHI_SH7751	0x3505		/* SH7751 PCI Controller */
 #define	PCI_PRODUCT_HITACHI_SH7751R	0x350e		/* SH7751R PCI Controller */
+
+/* Huawei products */
+#define	PCI_PRODUCT_HUAWEI_HI1710	0x1711		/* Hi1710 BMC */
 
 /* IBM products */
 #define	PCI_PRODUCT_IBM_MCABRIDGE	0x0002		/* MCA Bridge */
@@ -3447,7 +3494,8 @@
 #define	PCI_PRODUCT_INTEL_WIFI_LINK_8260_2	0x24f4		/* Dual Band Wireless AC 8260 */
 #define	PCI_PRODUCT_INTEL_WIFI_LINK_4165_1	0x24f5		/* Dual Band Wireless AC 4165 */
 #define	PCI_PRODUCT_INTEL_WIFI_LINK_4165_2	0x24f6		/* Dual Band Wireless AC 4165 */
-#define	PCI_PRODUCT_INTEL_WIFI_LINK_8265_2	0x24fd		/* Dual Band Wireless AC 8265 */
+#define	PCI_PRODUCT_INTEL_WIFI_LINK_3168	0x24fb		/* Dual Band Wireless AC 3168 */
+#define	PCI_PRODUCT_INTEL_WIFI_LINK_8265	0x24fd		/* Dual Band Wireless AC 8265 */
 #define	PCI_PRODUCT_INTEL_82820_MCH	0x2501		/* 82820 MCH (Camino) */
 #define	PCI_PRODUCT_INTEL_82820_AGP	0x250f		/* 82820 AGP */
 #define	PCI_PRODUCT_INTEL_82850_HB	0x2530		/* 82850 Host */
@@ -4548,6 +4596,7 @@
 #define	PCI_PRODUCT_INTEL_PINEVIEW_IGD_1	0xa002		/* Pineview Integrated Graphics Device */
 #define	PCI_PRODUCT_INTEL_PINEVIEW_M_HB	0xa010		/* Pineview Host Bridge */
 #define	PCI_PRODUCT_INTEL_PINEVIEW_M_IGD	0xa011		/* Pineview Integrated Graphics Device */
+#define	PCI_PRODUCT_INTEL_PINEVIEW_M_IGD_1	0xa012		/* Pineview Integrated Graphics Device */
 #define	PCI_PRODUCT_INTEL_Z170_AHCI	0xa102		/* Z170 AHCI */
 #define	PCI_PRODUCT_INTEL_Z170_3RD_AHCI	0xa106		/* Z170 3rd Party RAID */
 #define	PCI_PRODUCT_INTEL_100SERIES_PCIE_1	0xa110		/* 100 Series PCIE */
@@ -5469,6 +5518,7 @@
 #define	PCI_PRODUCT_NVIDIA_GEFORCE_9800_GT	0x0614		/* GeForce 9800 GT */
 #define	PCI_PRODUCT_NVIDIA_GEFORCE_9600_GT	0x0622		/* GeForce 9600 GT */
 #define	PCI_PRODUCT_NVIDIA_GEFORCE_9500_GT	0x0640		/* GeForce 9500 GT */
+#define	PCI_PRODUCT_NVIDIA_TESLA_M2050	0x06de		/* GF100GL (Tesla M2050) */
 #define	PCI_PRODUCT_NVIDIA_GEFORCE_9300_GE_1	0x06e0		/* GeForce 9300 GE */
 #define	PCI_PRODUCT_NVIDIA_GEFORCE8400GS	0x06e4		/* GeForce 8400 GS */
 #define	PCI_PRODUCT_NVIDIA_GEFORCE9300M_GS	0x06e9		/* GeForce 9300M GS */
@@ -5534,6 +5584,9 @@
 #define	PCI_PRODUCT_NVIDIA_MCP77_AHCI_11	0x0ada		/* nForce MCP77 AHCI Controller */
 #define	PCI_PRODUCT_NVIDIA_MCP77_AHCI_12	0x0adb		/* nForce MCP77 AHCI Controller */
 #define	PCI_PRODUCT_NVIDIA_GEFORCE_210_HDA	0x0be3		/* GeForce 210 High Definition Audio Controller */
+#define	PCI_PRODUCT_NVIDIA_GF100_HDA	0x0be5		/* GF100 HD Audio */
+#define	PCI_PRODUCT_NVIDIA_GF108_HDA	0x0bea		/* GF108 HD Audio */
+#define	PCI_PRODUCT_NVIDIA_GF116_HDA	0x0bee		/* GF116 HD Audio */
 #define	PCI_PRODUCT_NVIDIA_GF_GT640M	0x0fd2		/* GeForce GT 640M */
 #define	PCI_PRODUCT_NVIDIA_GT520	0x1040		/* GeForce GT 520 */
 #define	PCI_PRODUCT_NVIDIA_GEFORCE_510	0x1042		/* GeForce 510 */
@@ -5624,8 +5677,20 @@
 #define	PCI_PRODUCT_PEAK_PCAN	0x0001		/* PCAN CAN Controller */
 
 /* Pericom Semiconductor products */
-#define	PCI_PRODUCT_PERICOM_P17C9X110	0xe110		/* P17C9X110 PCIe to PCI Bridge */
-#define	PCI_PRODUCT_PERICOM_P17C9X	0xe111		/* P17C9X PCIe to PCI Bridge */
+#define	PCI_PRODUCT_PERICOM_PI7C21P100	0x01a7		/* PI7C21P100 PCIX-PCIX */
+#define	PCI_PRODUCT_PERICOM_PI7C9X20303UL	0x0303		/* PI7C9X20303UL 3port 3lane PCIe switch */
+#define	PCI_PRODUCT_PERICOM_PI7C9X20505GP	0x0505		/* PI7C9X20505GP 5port 5lane PCIe switch */
+#define	PCI_PRODUCT_PERICOM_PI7C9X20508GP	0x0508		/* PI7C9X20508GP 5port 8lane PCIe switch */
+#define	PCI_PRODUCT_PERICOM_PI7C9X2G404SL	0x2404		/* PI7C9X2G404SL 4port 4lane PCIe Gen2 switch */
+#define	PCI_PRODUCT_PERICOM_PI7C8140A	0x8140		/* PI7C8140A 2 port PCI-PCI Bridge */
+#define	PCI_PRODUCT_PERICOM_PI7C8148	0x8148		/* PI7C8148 Asynchronous 2 port PCI-PCI Bridge */
+#define	PCI_PRODUCT_PERICOM_PI7C8152	0x8152		/* PI7C8152 2 port PCI-PCI Bridge */
+#define	PCI_PRODUCT_PERICOM_PI7C8154	0x8154		/* PI7C8154 Asynchronous 2 port PCI-PCI Bridge */
+#define	PCI_PRODUCT_PERICOM_PI7C9X20303SL	0xa303		/* PI7C9X20303SL 3port 3lane PCIe switch */
+#define	PCI_PRODUCT_PERICOM_PI7C9X20404SL	0xa404		/* PI7C9X20303SL 4port 4lane PCIe switch */
+#define	PCI_PRODUCT_PERICOM_PI7C9X110	0xe110		/* PI7C9X110 PCIe to PCI Bridge */
+#define	PCI_PRODUCT_PERICOM_PI7C9X111SL	0xe111		/* PI7C9X111SL PCIe to PCI Reverse Bridge */
+#define	PCI_PRODUCT_PERICOM_PI7C9X130	0xe130		/* PI7C9X130 PCIE-PCIX Reverse Bridge */
 
 /* Phobos products */
 #define	PCI_PRODUCT_PHOBOS_P1000	0x1000		/* P1000 Gigabit Ethernet */
@@ -5849,6 +5914,7 @@
 #define	PCI_PRODUCT_RDC_R6061_EHCI	0x6061		/* R6061 USB EHCI */
 
 /* Realtek products */
+#define	PCI_PRODUCT_REALTEK_RTS5208	0x5208		/* RTS5208 PCI-E Card Reader */
 #define	PCI_PRODUCT_REALTEK_RTS5209	0x5209		/* RTS5209 PCI-E Card Reader */
 #define	PCI_PRODUCT_REALTEK_RTS5227	0x5227		/* RTS5227 PCI-E Card Reader */
 #define	PCI_PRODUCT_REALTEK_RTS5229	0x5229		/* RTS5229 PCI-E Card Reader */
@@ -5894,6 +5960,7 @@
 #define	PCI_PRODUCT_RICOH_Rx5C478	0x0478		/* 5C478 PCI-CardBus Bridge */
 #define	PCI_PRODUCT_RICOH_Rx5C551	0x0551		/* 5C551 PCI-CardBus Bridge/Firewire */
 #define	PCI_PRODUCT_RICOH_Rx5C552	0x0552		/* 5C552 PCI-CardBus Bridge/Firewire */
+#define	PCI_PRODUCT_RICOH_RL5C576	0x0576		/* R5C576 SD Card Controller */
 #define	PCI_PRODUCT_RICOH_Rx5C592	0x0592		/* 5C592 PCI-CardBus Bridge/MS/SD/Firewire */
 #define	PCI_PRODUCT_RICOH_Rx5C593	0x0593		/* 5C593 PCI-CardBus Bridge/MS/SD/Firewire */
 #define	PCI_PRODUCT_RICOH_Rx5C821	0x0821		/* 5C821 PCI-CardBus Bridge/MS/SD/MMC/SC */
@@ -6144,14 +6211,18 @@
 #define	PCI_PRODUCT_SIS_968	0x0968		/* 968 Host Bridge */
 #define	PCI_PRODUCT_SIS_5597_IDE	0x5513		/* 5597/5598 IDE Controller */
 #define	PCI_PRODUCT_SIS_5597_HB	0x5597		/* 5597/5598 Host Bridge */
+#define	PCI_PRODUCT_SIS_6300	0x6300		/* 630 AGP VGA */
 #define	PCI_PRODUCT_SIS_530VGA	0x6306		/* 530 GUI Accelerator+3D */
-#define	PCI_PRODUCT_SIS_6325	0x6325		/* 6325 AGP VGA */
+#define	PCI_PRODUCT_SIS_6325	0x6325		/* 650 AGP VGA */
 #define	PCI_PRODUCT_SIS_6326	0x6326		/* 6326 AGP VGA */
+#define	PCI_PRODUCT_SIS_6330	0x6330		/* 6330 VGA */
 #define	PCI_PRODUCT_SIS_5597_USB	0x7001		/* 5597/5598 USB Host Controller */
 #define	PCI_PRODUCT_SIS_7002	0x7002		/* 7002 USB 2.0 Host Controller */
 #define	PCI_PRODUCT_SIS_7012_AC	0x7012		/* 7012 AC-97 Sound */
+#define	PCI_PRODUCT_SIS_7013	0x7013		/* 7013 Modem */
 #define	PCI_PRODUCT_SIS_7016	0x7016		/* 7016 10/100 Ethernet */
 #define	PCI_PRODUCT_SIS_7018	0x7018		/* 7018 Sound */
+#define	PCI_PRODUCT_SIS_7019	0x7019		/* 7019 Audio */
 #define	PCI_PRODUCT_SIS_7502	0x7502		/* 7502 HD audio */
 
 /* Silicon Motion products */
@@ -6669,7 +6740,9 @@
 #define	PCI_PRODUCT_VMWARE_VMCI	0x0740		/* Virtual Machine Communication Interface */
 #define	PCI_PRODUCT_VMWARE_VMEM	0x0750		/* Virtual 82545EM */
 #define	PCI_PRODUCT_VMWARE_VMEB	0x0760		/* Virtual 82546EB */
-#define	PCI_PRODUCT_VMWARE_VMUSB	0x0770		/* Virtual USB */
+#define	PCI_PRODUCT_VMWARE_VMUSB	0x0770		/* Virtual EHCI */
+#define	PCI_PRODUCT_VMWARE_VMUHCI	0x0774		/* Virtual UHCI */
+#define	PCI_PRODUCT_VMWARE_VMXHCI	0x0778		/* Virtual xHCI */
 #define	PCI_PRODUCT_VMWARE_VM1394	0x0780		/* Virtual Firewire */
 #define	PCI_PRODUCT_VMWARE_VMPCIB	0x0790		/* Virtual PCI Bridge */
 #define	PCI_PRODUCT_VMWARE_VMPCIE	0x07a0		/* Virtual PCI Express Root Port */

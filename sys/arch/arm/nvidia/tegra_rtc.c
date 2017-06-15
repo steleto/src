@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_rtc.c,v 1.2 2015/12/13 17:39:19 jmcneill Exp $ */
+/* $NetBSD: tegra_rtc.c,v 1.4 2017/05/25 23:53:05 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_rtc.c,v 1.2 2015/12/13 17:39:19 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_rtc.c,v 1.4 2017/05/25 23:53:05 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -70,7 +70,12 @@ CFATTACH_DECL_NEW(tegra_rtc, sizeof(struct tegra_rtc_softc),
 static int
 tegra_rtc_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = { "nvidia,tegra124-rtc", NULL };
+	const char * const compatible[] = {
+		"nvidia,tegra210-rtc",
+		"nvidia,tegra124-rtc",
+		"nvidia,tegra20-rtc",
+		NULL
+	};
 	struct fdt_attach_args * const faa = aux;
 
 	return of_match_compatible(faa->faa_phandle, compatible);
@@ -104,7 +109,7 @@ tegra_rtc_attach(device_t parent, device_t self, void *aux)
 	sc->sc_todr.todr_gettime = tegra_rtc_gettime;
 	sc->sc_todr.todr_settime = tegra_rtc_settime;
 	sc->sc_todr.cookie = sc;
-	todr_attach(&sc->sc_todr);
+	fdtbus_todr_attach(self, faa->faa_phandle, &sc->sc_todr);
 }
 
 static int

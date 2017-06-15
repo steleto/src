@@ -1,4 +1,4 @@
-#	$NetBSD: shlib_version,v 1.269 2016/09/24 20:12:07 christos Exp $
+#	$NetBSD: shlib_version,v 1.275 2017/06/08 18:27:05 joerg Exp $
 #	Remember to update distrib/sets/lists/base/shl.* when changing
 #
 # things we wish to do on next major version bump:
@@ -8,6 +8,7 @@
 # - libc/net: resolver update to BIND8/9?
 # - md2, md4, md5, rmd160 & sha1 functions should take the same arguments AFAP
 # - Crypto hashes have name overlap with libcrypto, rename them
+# - libc/gen/setproctitle.c: remove __ps_strings hack
 # - libc/gen/assert.c: __{diag,}assert13() -> __{diag,}assert()
 # - lib/libc/net/iso_addr.c: remove
 # - libc/gen/times.c: remove; __times13() -> times()
@@ -45,5 +46,9 @@
 # - decide whether soft-float should support fenv.h, including thread-local contett
 # - stop all math functions from setting errno
 # - boot obsolete signal functions to libcompat
+# - remove exect(3) API - tracing functionality has been moved to the kernel
+# - punt gethostid/sethostid(3) to libcompat or remove entirely
+# - clean-up initialisation order between crt0.o, rtld and libc.
+# - move environ and __ps_strings from crt0.o into libc.
 major=12
-minor=205
+minor=207

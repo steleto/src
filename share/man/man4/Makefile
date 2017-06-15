@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.632 2017/01/21 20:21:57 jdolecek Exp $
+#	$NetBSD: Makefile,v 1.638 2017/06/13 09:11:22 nat Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/18/93
 
 MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
@@ -16,7 +16,7 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	brgphy.4 bridge.4 bthidev.4 bthub.4 btkbd.4 \
 	btmagic.4 btms.4 btsco.4 btuart.4 \
 	bwi.4 \
-	cac.4 cardbus.4 carp.4 cas.4 ccd.4 cd.4 \
+	cac.4 can.4 canloop.4 cardbus.4 carp.4 cas.4 ccd.4 cd.4 \
 	cec.4 cgd.4 cfb.4 ch.4 chipsfb.4 ciphy.4 ciss.4 clcs.4 clct.4 \
 	clockctl.4 cmdide.4 cmpci.4 cms.4 cnw.4 \
 	com.4 coram.4 crypto.4 cs80bus.4 cuda.4 cypide.4 cxdtv.4 \
@@ -38,7 +38,7 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	ixpide.4 \
 	jme.4 jmide.4 joy.4 \
 	kloader.4 kse.4 ksyms.4 kttcp.4 \
-	lc.4 ld.4 lii.4 lo.4 lua.4 lxtphy.4 \
+	l2tp.4 lc.4 ld.4 lii.4 lo.4 lua.4 lxtphy.4 \
 	mainbus.4 makphy.4 malo.4 mbe.4 mca.4 mcclock.4 md.4 mfb.4 \
 	mfi.4 mhzc.4 \
 	micphy.4 midi.4 mii.4 mk48txx.4 mlx.4 mly.4 mpls.4 mpii.4 mpt.4 mpu.4 mtd.4 \
@@ -50,8 +50,8 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	pad.4 pas.4 pcdisplay.4 pcf8563rtc.4 pciide.4 pckbc.4 pckbd.4 pcn.4 \
 	pcppi.4 pcscp.4 pcweasel.4 pdcide.4 pdcsata.4 piixide.4 piixpcib.4 \
 	piixpm.4 pim.4 plip.4 pm3fb.4 pms.4 pmu.4 pnaphy.4 ppbus.4 ppp.4 pppoe.4 \
-	pseye.4 ptcd.4 ptm.4 pty.4 puc.4 pud.4 puffs.4 pwdog.4 px.4 pxg.4 \
-	qe.4 qec.4 qsphy.4 \
+	pseye.4 ptcd.4 ptm.4 pty.4 puc.4 pud.4 puffs.4 pwdog.4 px.4 pxaip.4 \
+	pxg.4 qe.4 qec.4 qsphy.4 \
 	raid.4 ral.4 ray.4 rcons.4 rdcphy.4 re.4 rgephy.4 rlphy.4 \
 	rnd.4 route.4 rs5c372rtc.4 rtk.4 rtsx.4 rtw.4 rtwn.4 rum.4 run.4 \
 	s390rtc.4 satalink.4 sbus.4 scc.4 schide.4 \
@@ -66,17 +66,18 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	trm.4 tty.4 tun.4 tqphy.4 twa.4 twe.4 txp.4 \
 	uark.4 ubsec.4 udp.4 uep.4 ug.4 uha.4 uk.4 ukphy.4 unix.4 userconf.4 \
 	vald.4 valz.4 veriexec.4 vga.4 vge.4 viaide.4 video.4 vioif.4 viomb.4 \
-	viornd.4 virt.4 \
+	viornd.4 vioscsi.4 virt.4 \
 	virtio.4 vlan.4 vmmon.4 vmnet.4 vnd.4 voodoofb.4 vr.4 vte.4 \
 	wapbl.4 wb.4 wbsio.4 wd.4 wdc.4 wi.4 wm.4 wpi.4 \
-	wscons.4 wsdisplay.4 wsfont.4 wskbd.4 wsmouse.4 wsmux.4 \
+	wsbell.4 wscons.4 wsdisplay.4 wsfont.4 wskbd.4 wsmouse.4 wsmux.4 \
 	xbox.4 xge.4 \
 	yds.4 ym.4 \
 	zero.4 zstty.4 zyd.4
 
 # USB devices
 MAN+=	atu.4 aubtfwl.4 aue.4 axe.4 axen.4 cdce.4 cue.4 ehci.4 kue.4 ohci.4 \
-	slhci.4 stuirda.4 u3g.4 uatp.4 uaudio.4 uberry.4 ubsa.4 ubt.4 uchcom.4 \
+	slhci.4 stuirda.4 u3g.4 ualea.4 uatp.4 uaudio.4 uberry.4 ubsa.4 ubt.4 \
+	uchcom.4 \
 	ucom.4 ucycom.4 udav.4 udsbr.4 uftdi.4 ugen.4 ugensa.4 uhci.4 uhid.4 \
 	uhidev.4 uhmodem.4 uhso.4 uipaq.4 uirda.4 ukbd.4 ukyopon.4 ulpt.4 \
 	umass.4 umcs.4 umct.4 umidi.4 umodem.4 ums.4 upgt.4 upl.4 uplcom.4 \

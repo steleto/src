@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2016, Intel Corp.
+ * Copyright (C) 2000 - 2017, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1160,6 +1160,31 @@ AcpiDmEmitExternals (
     }
 
     AcpiOsPrintf ("\n");
+}
+
+
+/*******************************************************************************
+ *
+ * FUNCTION:    AcpiDmEmitExternal
+ *
+ * PARAMETERS:  Op                  External Parse Object
+ *
+ * RETURN:      None
+ *
+ * DESCRIPTION: Emit an External() ASL statement for the current External
+ *              parse object
+ *
+ ******************************************************************************/
+
+void
+AcpiDmEmitExternal (
+    ACPI_PARSE_OBJECT       *NameOp,
+    ACPI_PARSE_OBJECT       *TypeOp)
+{
+    AcpiOsPrintf ("External (");
+    AcpiDmNamestring (NameOp->Common.Value.Name);
+    AcpiOsPrintf ("%s)\n",
+        AcpiDmGetObjectTypeName ((ACPI_OBJECT_TYPE) TypeOp->Common.Value.Integer));
 }
 
 

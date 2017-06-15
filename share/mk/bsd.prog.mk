@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.prog.mk,v 1.300 2016/08/20 11:23:33 christos Exp $
+#	$NetBSD: bsd.prog.mk,v 1.307 2017/05/21 15:28:42 riastradh Exp $
 #	@(#)bsd.prog.mk	8.2 (Berkeley) 4/2/94
 
 .ifndef HOSTPROG
@@ -114,10 +114,8 @@ LIBCRTI=	${DESTDIR}/usr/lib/${MLIBDIR:D${MLIBDIR}/}crti.o
 	compat \
 	crypt \
 	crypto \
-	crypto_idea \
-	crypto_mdc2 \
-	crypto_rc5 \
 	curses \
+	cxx \
 	dbm \
 	des \
 	dns \
@@ -155,6 +153,7 @@ LIBCRTI=	${DESTDIR}/usr/lib/${MLIBDIR:D${MLIBDIR}/}crti.o
 	m \
 	magic \
 	menu \
+	netpgpverify \
 	objc \
 	ossaudio \
 	pam \
@@ -163,7 +162,6 @@ LIBCRTI=	${DESTDIR}/usr/lib/${MLIBDIR:D${MLIBDIR}/}crti.o
 	pmc \
 	posix \
 	pthread \
-	pthread_dbg \
 	puffs \
 	quota \
 	radius \
@@ -214,15 +212,13 @@ LIB${_lib:tu}=	${DESTDIR}/usr/lib/lib${_lib:S/xx/++/:S/atf_c/atf-c/}.a
 
 # PAM applications, if linked statically, need more libraries
 .if (${MKPIC} == "no")
-.if (${MKCRYPTO} != "no")
 PAM_STATIC_LDADD+= -lssh
 PAM_STATIC_DPADD+= ${LIBSSH}
-.endif
 .if (${MKKERBEROS} != "no")
 PAM_STATIC_LDADD+= -lkafs -lkrb5 -lhx509 -lwind -lasn1 \
-	-lroken -lcom_err -lheimbase -lcrypto
+	-lroken -lcom_err -lheimbase -lcrypto -lsqlite3
 PAM_STATIC_DPADD+= ${LIBKAFS} ${LIBKRB5} ${LIBHX509} ${LIBWIND} ${LIBASN1} \
-	${LIBROKEN} ${LIBCOM_ERR} ${LIBHEIMBASE} ${LIBCRYPTO}
+	${LIBROKEN} ${LIBCOM_ERR} ${LIBHEIMBASE} ${LIBCRYPTO} ${LIBSQLITE3}
 .endif
 .if (${MKSKEY} != "no")
 PAM_STATIC_LDADD+= -lskey

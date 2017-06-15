@@ -1,4 +1,4 @@
-/*	$NetBSD: net_component.c,v 1.8 2017/01/17 02:02:27 christos Exp $	*/
+/*	$NetBSD: net_component.c,v 1.9 2017/02/16 08:39:10 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2009 Antti Kantee.  All Rights Reserved.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: net_component.c,v 1.8 2017/01/17 02:02:27 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: net_component.c,v 1.9 2017/02/16 08:39:10 knakahara Exp $");
 
 #include <sys/param.h>
 #include <sys/domain.h>
@@ -36,6 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD: net_component.c,v 1.8 2017/01/17 02:02:27 christos E
 
 #include <net/if.h>
 #include <net/if_llatbl.h>
+#include <net/if_l2tp.h>
 #include <net/route.h>
 
 #include <rump-sys/kern.h>

@@ -1,4 +1,4 @@
-#	$NetBSD: net_common.sh,v 1.11 2017/01/10 05:55:34 ozaki-r Exp $
+#	$NetBSD: net_common.sh,v 1.18 2017/06/02 01:18:51 ozaki-r Exp $
 #
 # Copyright (c) 2016 Internet Initiative Japan Inc.
 # All rights reserved.
@@ -29,7 +29,9 @@
 # Common utility functions for tests/net
 #
 
-HIJACKING="env LD_PRELOAD=/usr/lib/librumphijack.so RUMPHIJACK=sysctl=yes"
+HIJACKING="env LD_PRELOAD=/usr/lib/librumphijack.so \
+    RUMPHIJACK=path=/rump,socket=all:nolocal,sysctl=yes"
+ONEDAYISH="(23h5[0-9]m|1d0h0m)[0-9]+s ?"
 
 extract_new_packets()
 {
@@ -132,24 +134,92 @@ stop_httpd()
 	fi
 }
 
+NC_PID=./.__nc.pid
+start_nc_server()
+{
+	local sock=$1
+	local port=$2
+	local outfile=$3
+	local proto=${4:-ipv4}
+	local backup=$RUMP_SERVER
+	local pid= opts=
+
+	export RUMP_SERVER=$sock
+
+	if [ $proto = ipv4 ]; then
+		opts="-l -4"
+	else
+		opts="-l -6"
+	fi
+
+	env LD_PRELOAD=/usr/lib/librumphijack.so \
+	    nc $opts $port > $outfile &
+	pid=$!
+	echo $pid > $NC_PID
+
+	$DEBUG && rump.netstat -a -f inet
+
+	export RUMP_SERVER=$backup
+
+	sleep 1
+}
+
+stop_nc_server()
+{
+
+	if [ -f $NC_PID ]; then
+		kill -9 $(cat $NC_PID)
+		rm -f $NC_PID
+		sleep 1
+	fi
+}
+
 BASIC_LIBS="-lrumpnet -lrumpnet_net -lrumpnet_netinet \
     -lrumpnet_shmif -lrumpdev"
 FS_LIBS="$BASIC_LIBS -lrumpvfs -lrumpfs_ffs"
+CRYPTO_LIBS="$BASIC_LIBS -lrumpvfs -lrumpdev_opencrypto \
+    -lrumpkern_z -lrumpkern_crypto"
 
 # We cannot keep variables between test phases, so need to store in files
 _rump_server_socks=./.__socks
 _rump_server_ifaces=./.__ifaces
 _rump_server_buses=./.__buses
 
+DEBUG_SYSCTL_ENTRIES="net.inet.arp.debug net.inet6.icmp6.nd6_debug \
+    net.inet.ipsec.debug"
+
+IPSEC_KEY_DEBUG=${IPSEC_KEY_DEBUG:-false}
+
 _rump_server_start_common()
 {
 	local sock=$1
 	local libs=
+	local backup=$RUMP_SERVER
 
 	shift 1
 	libs="$*"
 
 	atf_check -s exit:0 rump_server $libs $sock
+
+	if $DEBUG; then
+		# Enable debugging features in the kernel
+		export RUMP_SERVER=$sock
+		for ent in $DEBUG_SYSCTL_ENTRIES; do
+			if rump.sysctl -q $ent; then
+				atf_check -s exit:0 rump.sysctl -q -w $ent=1
+			fi
+		done
+		export RUMP_SERVER=$backup
+	fi
+	if $IPSEC_KEY_DEBUG; then
+		# Enable debugging features in the kernel
+		export RUMP_SERVER=$sock
+		if rump.sysctl -q net.key.debug; then
+			atf_check -s exit:0 \
+			    rump.sysctl -q -w net.key.debug=0xffff
+		fi
+		export RUMP_SERVER=$backup
+	fi
 
 	echo $sock >> $_rump_server_socks
 	$DEBUG && cat $_rump_server_socks
@@ -178,6 +248,24 @@ rump_server_fs_start()
 	local sock=$1
 	local _libs=
 	local libs="$FS_LIBS"
+
+	shift 1
+	_libs="$*"
+
+	for lib in $_libs; do
+		libs="$libs -lrumpnet_$lib"
+	done
+
+	_rump_server_start_common $sock $libs
+
+	return 0
+}
+
+rump_server_crypto_start()
+{
+	local sock=$1
+	local _libs=
+	local libs="$CRYPTO_LIBS"
 
 	shift 1
 	_libs="$*"

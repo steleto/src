@@ -1,4 +1,4 @@
-/*	$NetBSD: tmpfs_vfsops.c,v 1.68 2016/08/26 21:44:24 dholland Exp $	*/
+/*	$NetBSD: tmpfs_vfsops.c,v 1.72 2017/06/01 02:45:13 chs Exp $	*/
 
 /*
  * Copyright (c) 2005, 2006, 2007 The NetBSD Foundation, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tmpfs_vfsops.c,v 1.68 2016/08/26 21:44:24 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tmpfs_vfsops.c,v 1.72 2017/06/01 02:45:13 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -92,7 +92,7 @@ tmpfs_mount(struct mount *mp, const char *path, void *data, size_t *data_len)
 	struct vnode *vp;
 	uint64_t memlimit;
 	ino_t nodes;
-	int error;
+	int error, flags;
 	bool set_memlimit;
 	bool set_nodes;
 
@@ -160,6 +160,15 @@ tmpfs_mount(struct mount *mp, const char *path, void *data, size_t *data_len)
 		tmp = VFS_TO_TMPFS(mp);
 		if (set_nodes && nodes < tmp->tm_nodes_cnt)
 			return EBUSY;
+		if ((mp->mnt_iflag & IMNT_WANTRDONLY)) {
+			/* Changing from read/write to read-only. */
+			flags = WRITECLOSE;
+			if ((mp->mnt_flag & MNT_FORCE))
+				flags |= FORCECLOSE;
+			error = vflush(mp, NULL, flags);
+			if (error)
+				return error;
+		}
 		if (set_memlimit) {
 			if ((error = tmpfs_mntmem_set(tmp, memlimit)) != 0)
 				return error;
@@ -175,9 +184,6 @@ tmpfs_mount(struct mount *mp, const char *path, void *data, size_t *data_len)
 
 	/* Allocate the tmpfs mount structure and fill it. */
 	tmp = kmem_zalloc(sizeof(tmpfs_mount_t), KM_SLEEP);
-	if (tmp == NULL)
-		return ENOMEM;
-
 	tmp->tm_nodes_max = nodes;
 	tmp->tm_nodes_cnt = 0;
 	LIST_INIT(&tmp->tm_nodes);
@@ -467,7 +473,7 @@ struct vfsops tmpfs_vfsops = {
 	.vfs_done = tmpfs_done,
 	.vfs_snapshot = tmpfs_snapshot,
 	.vfs_extattrctl = vfs_stdextattrctl,
-	.vfs_suspendctl = (void *)eopnotsupp,
+	.vfs_suspendctl = genfs_suspendctl,
 	.vfs_renamelock_enter = genfs_renamelock_enter,
 	.vfs_renamelock_exit = genfs_renamelock_exit,
 	.vfs_fsync = (void *)eopnotsupp,

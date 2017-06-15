@@ -1,4 +1,4 @@
-#  $NetBSD: Makefile,v 1.187 2016/12/08 18:42:01 christos Exp $
+#  $NetBSD: Makefile,v 1.191 2017/05/06 18:03:24 christos Exp $
 #
 #  @(#)Makefile 5.1beta 93/09/24
 #
@@ -57,7 +57,9 @@ LINTFLAGS += -g
 .PATH: ${.CURDIR}/arch/aarch64
 ARCH_SRCS = e_sqrt.S e_sqrtf.S s_fabsf.S
 ARCH_SRCS+= s_fma.S s_fmaf.S s_fmax.S s_fmaxf.S s_fmin.S s_fminf.S
+.if ${MKSOFTFLOAT} == "no"
 COMMON_SRCS+= fenv.c
+.endif
 COMMON_SRCS+= e_sqrtl.c
 COMMON_SRCS+= s_fma.c s_fmaf.c s_fmal.c
 .elif (${LIBC_MACHINE_ARCH} == "alpha")
@@ -67,8 +69,10 @@ COMMON_SRCS+= fenv.c
 COPTS+=	-mfloat-ieee -mieee-with-inexact -mfp-trap-mode=sui -mtrap-precision=i
 .elif (${LIBC_MACHINE_CPU} == "arm")
 .PATH.c: ${.CURDIR}/arch/arm
-COMMON_SRCS+= fenv.c s_nexttowardf.c \
-	s_nearbyint.c s_rintl.c
+.if ${MKSOFTFLOAT} == "no"
+COMMON_SRCS+= fenv.c
+.endif
+COMMON_SRCS+= s_nexttowardf.c s_nearbyint.c s_rintl.c
 .for f in fenv.c lrint.S lrintf.S s_fabsf.S s_fma.S s_fmaf.S
 COPTS.$f +=	-mfpu=vfp
 .endfor
@@ -77,18 +81,20 @@ COMMON_SRCS+= s_fma.c s_fmaf.c s_fmal.c
 .PATH.S: ${.CURDIR}/arch/arm
 ARCH_SRCS = e_sqrt.S e_sqrtf.S lrint.S lrintf.S s_fabsf.S s_fma.S s_fmaf.S
 .endif
+.elif (${LIBC_MACHINE_ARCH} == "ia64")
+.PATH: ${.CURDIR}/arch/ia64
+COMMON_SRCS += fenv.c
 .elif (${LIBC_MACHINE_ARCH} == "hppa")
 .PATH.c: ${.CURDIR}/arch/hppa
-COMMON_SRCS+= fenv.c s_nexttowardf.c \
-	s_nearbyint.c s_rintl.c
+COMMON_SRCS+= fenv.c s_nexttowardf.c s_nearbyint.c s_rintl.c
 .elif (${LIBC_MACHINE_ARCH} == "sparc")
 .PATH: ${.CURDIR}/arch/sparc
 COMMON_SRCS+= fenv.c
 COMMON_SRCS+= s_fma.c s_fmaf.c s_fmal.c
 .elif (${LIBC_MACHINE_ARCH} == "sparc64")
 .PATH: ${.CURDIR}/arch/sparc64
-COMMON_SRCS+= fenv.c s_nexttowardf.c \
-	s_nearbyint.c s_rintl.c
+COMMON_SRCS+= fenv.c
+COMMON_SRCS+= s_nexttowardf.c s_nearbyint.c s_rintl.c
 .ifndef _COMPAT_M32_MK_
 COMMON_SRCS+= s_nexttoward.c
 .endif
@@ -134,7 +140,7 @@ ARCH_SRCS += s_ceil.S s_copysign.S s_finite.S s_floor.S s_rint.S
 COPTS+=-m68040
 ARCH_SRCS = s_copysign.S s_finite.S
 .else
-.if (${MKSOFTFLOAT} != "yes")
+.if (${MKSOFTFLOAT} == "no")
 .PATH:	${.CURDIR}/arch/mc68881 ${.CURDIR}/arch/m68k
 ARCH_SRCS = e_acos.S e_asin.S e_atanh.S e_cosh.S e_exp.S e_fmod.S e_log.S \
 	    e_log10.S e_remainder.S e_scalb.S e_sinh.S e_sqrt.S s_atan.S \
@@ -157,9 +163,8 @@ WARNS?=5
 .elif (${LIBC_MACHINE_CPU} == "riscv")
 .PATH:	${.CURDIR}/arch/riscv
 
-COMMON_SRCS += fenv.c
-
 .if ${MKSOFTFLOAT} == "no"
+COMMON_SRCS += fenv.c
 ARCH_SRCS = e_sqrt.S e_sqrtf.S
 ARCH_SRCS += s_copysign.S s_copysignf.S
 ARCH_SRCS += s_fabs.S s_fabsf.S
@@ -169,13 +174,19 @@ ARCH_SRCS += s_fmin.S s_fminf.S
 .endif
 .elif (${LIBC_MACHINE_ARCH} == "powerpc")
 .PATH:	${.CURDIR}/arch/powerpc
+.if ${MKSOFTFLOAT} == "no"
 COMMON_SRCS += fenv.c
+.endif
 .elif (${LIBC_MACHINE_CPU} == "mips")
 .PATH:	${.CURDIR}/arch/mips
+.if ${MKSOFTFLOAT} == "no"
 COMMON_SRCS += fenv.c
+.endif
 .elif (${LIBC_MACHINE_CPU} == "sh3")
 .PATH:	${.CURDIR}/arch/sh3
+.if ${MKSOFTFLOAT} == "no"
 COMMON_SRCS += fenv.c
+.endif
 .endif
 
 WARNS?=5
@@ -194,6 +205,27 @@ CPPFLAGS+= -D_MULTI_LIBM -D_POSIX_MODE
 COPTS+=	-fno-strict-aliasing
 .endif
 CPPFLAGS+=-DLIBM_SCCS
+
+.if (${MKSOFTFLOAT} != "no" || ${MACHINE_ARCH} == "m68000")
+.PATH:	${.CURDIR}/softfloat
+.include "${.CURDIR}/../libc/libcincludes.mk"
+CPPFLAGS+=	-I${ARCHDIR}/softfloat
+COMMON_SRCS += \
+	feclearexcept.c \
+	fedisableexcept.c \
+	feenableexcept.c \
+	fegetenv.c \
+	fegetexcept.c \
+	fegetexceptflag.c \
+	fegetround.c \
+	feholdexcept.c \
+	feraiseexcept.c \
+	fesetenv.c \
+	fesetexceptflag.c \
+	fesetround.c \
+	fetestexcept.c \
+	feupdateenv.c
+.endif
 
 LIB=	m
 COMMON_SRCS+= b_exp.c b_log.c b_tgamma.c \
@@ -216,6 +248,10 @@ COMMON_SRCS+= b_exp.c b_log.c b_tgamma.c \
 	s_floor.c s_floorf.c s_floorl.c s_frexpf.c \
 	s_ilogb.c s_ilogbf.c s_ilogbl.c \
 	s_isinff.c s_isnanf.c s_lib_version.c s_log1p.c \
+	s_llrint.c s_llrintf.c s_llrintl.c \
+	s_llround.c s_llroundf.c s_llroundl.c \
+	s_lrint.c s_lrintf.c s_lrintl.c \
+	s_lround.c s_lroundf.c s_lroundl.c \
 	s_log1pf.c s_logb.c s_logbf.c s_logbl.c \
 	s_matherr.c s_modff.c s_modfl.c s_nextafter.c s_nextafterl.c \
 	s_nextafterf.c s_remquo.c s_remquof.c s_rint.c s_rintf.c \
@@ -233,8 +269,7 @@ COMMON_SRCS+= b_exp.c b_log.c b_tgamma.c \
 	w_log2f.c w_logf.c \
 	w_pow.c w_powf.c w_remainder.c w_remainderf.c w_scalb.c w_scalbf.c \
 	w_sinh.c w_sinhf.c w_sqrt.c w_sqrtf.c w_sqrtl.c \
-	lrint.c lrintf.c llrint.c llrintf.c lround.c lroundf.c llround.c \
-	llroundf.c s_frexp.c s_frexpl.c s_modf.c \
+	s_frexp.c s_frexpl.c s_modf.c \
 	s_fmax.c s_fmaxf.c s_fmaxl.c \
 	s_fmin.c s_fminf.c s_fminl.c s_fdim.c
 

@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.401 2017/01/07 04:44:12 ozaki-r Exp $
+#       $NetBSD: Makefile,v 1.415 2017/06/13 09:11:22 nat Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -29,10 +29,10 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	in_getifa.9 \
 	in4_cksum.9 inittodr.9 interrupt_distribute.9 intro.9 ioasic.9 \
 	ioctl.9 ipkdb.9 ipi.9 isa.9 isapnp.9 itimerfix.9 kauth.9 kcopy.9 \
-	kcpuset.9 kernhist.9 kmem.9 kpause.9 \
+	kcpuset.9 kernhist.9 klua_lock.9 klua_mod_register.9 kmem.9 kpause.9 \
 	kfilter_register.9 knote.9 \
-	kprintf.9 kthread.9 linedisc.9 lock.9 log.9 ltsleep.9 \
-	LWP_CACHE_CREDS.9 \
+	kprintf.9 kthread.9 linedisc.9 lock.9 locking.9 log.9 ltsleep.9 \
+	localcount.9 LWP_CACHE_CREDS.9 \
 	makeiplcookie.9 \
 	malloc.9 mb.9 mbuf.9 mca.9 memcmp.9 memcpy.9 memoryallocators.9 \
 	memmove.9 memset.9 \
@@ -61,7 +61,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	vnfileops.9 vnode.9 vnodeops.9 vnsubr.9 \
 	ubc.9 usbd_status.9 usbdi.9 uvm.9 uvm_hotplug.9 uvm_km.9 uvm_map.9 \
 	vmem.9 wapbl.9 wdc.9 workqueue.9 \
-	wscons.9 wsdisplay.9 wsfont.9 wskbd.9 wsmouse.9 \
+	wsbell.9 wscons.9 wsdisplay.9 wsfont.9 wskbd.9 wsmouse.9 \
 	xcall.9
 
 MAN+=	boothowto.9
@@ -119,6 +119,7 @@ MLINKS+=autoconf.9 config_search_loc.9 \
 	autoconf.9 config_attach_pseudo.9 \
 	autoconf.9 config_detach.9 \
 	autoconf.9 config_detach_children.9 \
+	autoconf.9 config_detach_release.9 \
 	autoconf.9 config_deactivate.9 \
 	autoconf.9 config_defer.9 \
 	autoconf.9 config_interrupts.9 \
@@ -150,6 +151,19 @@ MLINKS+=bufferio.9 biodone.9 \
 	bufferio.9 putiobuf.9 \
 	bufferio.9 nestiobuf_setup.9 \
 	bufferio.9 nestiobuf_done.9
+MLINKS+=bufq.9 bufq_init.9 \
+		bufq.9 bufq_register.9 \
+		bufq.9 bufq_unregister.9 \
+		bufq.9 bufq_state.9 \
+		bufq.9 bufq_alloc.9 \
+		bufq.9 bufq_drain.9 \
+		bufq.9 bufq_free.9 \
+		bufq.9 bufq_getstrategyname.9 \
+		bufq.9 bufq_move.9 \
+		bufq.9 bufq_put.9 \
+		bufq.9 bufq_get.9 \
+		bufq.9 bufq_peek.9 \
+		bufq.9 bufq_cancel.9
 MLINKS+=bus_space.9 bus_space_alloc.9 bus_space.9 bus_space_barrier.9 \
 	bus_space.9 bus_space_copy_region_1.9 \
 	bus_space.9 bus_space_copy_region_2.9 \
@@ -258,7 +272,7 @@ MLINKS+=copy.9 copyin.9 copy.9 copyout.9 copy.9 copystr.9 \
 	copy.9 ioctl_copyin.9 copy.9 ioctl_copyout.9
 MLINKS+=cpu_dumpconf.9 cpu_dump.9 cpu_dumpconf.9 cpu_dumpsize.9 \
 	cpu_dumpconf.9 dumpsys.9
-MLINKS+=cpu_lwp_fork.9 child_return.9 cpu_lwp_fork.9 proc_trampoline.9
+MLINKS+=cpu_lwp_fork.9 child_return.9 cpu_lwp_fork.9 lwp_trampoline.9
 MLINKS+=cpu_rootconf.9 setroot.9 \
         cpu_rootconf.9 rootconf.9
 MLINKS+=cpufreq.9 cpufreq_register.9 \
@@ -278,7 +292,8 @@ MLINKS+=ctod.9 dtoc.9 \
 	ctod.9 btodb.9
 MLINKS+=curproc.9 curcpu.9 curproc.9 curlwp.9
 MLINKS+=delay.9 DELAY.9
-MLINKS+=devsw_attach.9 devsw_detach.9 \
+MLINKS+=devsw_attach.9 devsw.9 \
+	devsw_attach.9 devsw_detach.9 \
 	devsw_attach.9 bdevsw_lookup.9 \
 	devsw_attach.9 cdevsw_lookup.9 \
 	devsw_attach.9 bdevsw_lookup_major.9 \
@@ -302,7 +317,8 @@ MLINKS+=evcnt.9 evcnt_attach_dynamic.9 evcnt.9 evcnt_attach_static.9 \
 MLINKS+=extent.9 extent_create.9 extent.9 extent_destroy.9 \
 	extent.9 extent_alloc.9 extent.9 extent_alloc_subregion.9 \
 	extent.9 extent_alloc_region.9 extent.9 extent_free.9 \
-	extent.9 extent_print.9
+	extent.9 extent_print.9 extent.9 extent_alloc1.9 \
+	extent.9 extent_alloc_subregion1.9
 MLINKS+=fetch.9 fubyte.9 fetch.9 fuibyte.9 fetch.9 fusword.9 \
 	fetch.9 fuswintr.9 fetch.9 fuword.9 fetch.9 fuiword.9
 MLINKS+=file.9 closef.9 \
@@ -429,6 +445,9 @@ MLINKS+=kcpuset.9 kcpuset_create.9 \
 MLINKS+=kmem.9 kmem_alloc.9 \
 	kmem.9 kmem_free.9 \
 	kmem.9 kmem_zalloc.9 \
+	kmem.9 kmem_intr_alloc.9 \
+	kmem.9 kmem_intr_free.9 \
+	kmem.9 kmem_intr_zalloc.9 \
 	kmem.9 kmem_asprintf.9
 MAN+=	kpreempt.9
 MLINKS+=kpreempt.9 kpreempt_disable.9 \
@@ -511,6 +530,7 @@ MLINKS+=module.9 module_autoload.9 \
 MLINKS+=mstohz.9 hztoms.9
 MLINKS+=mutex.9 mutex_init.9 mutex.9 mutex_destroy.9 mutex.9 mutex_enter.9 \
 	mutex.9 mutex_exit.9 mutex.9 mutex_tryenter.9 mutex.9 mutex_owned.9 \
+	mutex.9 mutex_ownable.9 \
 	mutex.9 mutex_spin_enter.9 mutex.9 mutex_spin_exit.9
 MLINKS+=m_tag.9 m_tag_copy.9 \
 	m_tag.9 m_tag_copy_chain.9 \
@@ -896,6 +916,7 @@ MLINKS+=todr.9 todr_gettime.9 todr.9 todr_settime.9 \
 	todr.9 clock_ymdhms_to_secs.9 todr.9 clock_secs_to_ymdhms.9
 
 MLINKS+=ubc.9 ubc_alloc.9 ubc.9 ubc_release.9 ubc.9 ubc_uiomove.9
+MLINKS+=ubc.9 ubc_zerorange.9 ubc.9 ubc_purge.9
 MLINKS+=uvm.9 uvm_init.9 uvm.9 uvm_init_limits.9 uvm.9 uvm_setpagesize.9 \
 	uvm.9 uvm_swap_init.9 uvm.9 uvm_fault.9 \
 	uvm.9 uvm_vnp_setsize.9 \

@@ -1,4 +1,4 @@
-# $NetBSD: LOONGSON,v 1.29 2016/12/13 20:42:17 christos Exp $
+# $NetBSD: LOONGSON,v 1.31 2017/05/11 07:56:43 maya Exp $
 #
 # LOONGSON machine description file
 # 
@@ -22,7 +22,7 @@ include		"arch/evbmips/conf/std.loongson"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"LOONGSON-$Revision: 1.29 $"
+#ident 		"LOONGSON-$Revision: 1.31 $"
 
 maxusers	16
 
@@ -36,6 +36,7 @@ options 	DIAGNOSTIC		# extra kernel debugging checks
 #options 	PMAP_FAULTINFO
 #options 	LOCKDEBUG
 makeoptions	DEBUG="-g"
+makeoptions	COPY_SYMTAB=1		# size for embedded symbol table
 options 	KTRACE			# system call tracing support
 options 	MSGBUFSIZE=8192		# dmesg buffer size
 
@@ -95,6 +96,8 @@ options 	WAPBL		# File system journaling support
 #options	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
 #options 	QUOTA		# legacy UFS quotas
 #options 	QUOTA2		# new, in-filesystem UFS quotas
+#options 	DISKLABEL_EI	# disklabel Endian Independent support
+#options 	FFS_EI		# FFS Endian Independent support
 #options 	FFS_NO_SNAPSHOT	# No FFS snapshot support
 
 # Networking options

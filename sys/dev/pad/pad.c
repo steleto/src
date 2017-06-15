@@ -1,4 +1,4 @@
-/* $NetBSD: pad.c,v 1.26 2016/10/15 07:08:06 nat Exp $ */
+/* $NetBSD: pad.c,v 1.36 2017/06/06 07:32:41 nat Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.26 2016/10/15 07:08:06 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.36 2017/06/06 07:32:41 nat Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -99,6 +99,8 @@ static stream_filter_t *pad_swvol_filter_be(struct audio_softc *,
     const audio_params_t *, const audio_params_t *);
 static void	pad_swvol_dtor(stream_filter_t *);
 
+static bool	pad_is_attached;	/* Do we have an audio* child? */
+
 static const struct audio_hw_if pad_hw_if = {
 	.open = pad_audio_open,
 	.query_encoding = pad_query_encoding,
@@ -167,11 +169,6 @@ padattach(int n)
 
 	for (i = 0; i < n; i++) {
 		cf = kmem_alloc(sizeof(struct cfdata), KM_SLEEP);
-		if (cf == NULL) {
-			aprint_error("%s: couldn't allocate cfdata\n",
-			    pad_cd.cd_name);
-			continue;
-		}
 		cf->cf_name = pad_cd.cd_name;
 		cf->cf_atname = pad_cd.cd_name;
 		cf->cf_unit = i;
@@ -280,6 +277,7 @@ pad_attach(device_t parent, device_t self, void *opaque)
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
 
+	pad_is_attached = true;
 	return;
 }
 
@@ -288,6 +286,9 @@ pad_detach(device_t self, int flags)
 {
 	pad_softc_t *sc = device_private(self);
 	int cmaj, mn, rc;
+
+	if (!pad_is_attached)
+		return ENXIO;
 
 	cmaj = cdevsw_lookup_major(&pad_cdevsw);
 	mn = device_unit(self);
@@ -304,6 +305,7 @@ pad_detach(device_t self, int flags)
 
 	auconv_delete_encodings(sc->sc_encodings);
 
+	pad_is_attached = false;
 	return 0;
 }
 
@@ -316,13 +318,9 @@ pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 	if (sc == NULL)
 		return ENXIO;
 
-	if (atomic_swap_uint(&sc->sc_open, 1) != 0) {
+	if (atomic_swap_uint(&sc->sc_open, 1) != 0)
 		return EBUSY;
-	}
 	
-	getmicrotime(&sc->sc_last);
-	sc->sc_bytes_count = 0;
-
 	return 0;
 }
 
@@ -341,9 +339,9 @@ pad_close(dev_t dev, int flags, int fmt, struct lwp *l)
 	return 0;
 }
 
-#define PAD_BYTES_PER_SEC (44100 * sizeof(int16_t) * 2)
-#define TIMENEXTREAD	(20 * 1000)
-#define BYTESTOSLEEP ((PAD_BYTES_PER_SEC / (1000000 / TIMENEXTREAD)) + PAD_BLKSIZE)
+#define PAD_BYTES_PER_SEC   (44100 * sizeof(int16_t) * 2)
+#define BYTESTOSLEEP 	    (int64_t)(PAD_BLKSIZE)
+#define TIMENEXTREAD	    (int64_t)(BYTESTOSLEEP * 1000000 / PAD_BYTES_PER_SEC)
 
 int
 pad_read(dev_t dev, struct uio *uio, int flags)
@@ -362,39 +360,38 @@ pad_read(dev_t dev, struct uio *uio, int flags)
 
 	err = 0;
 
-	mutex_enter(&sc->sc_lock);
-	intr = sc->sc_intr;
-	intrarg = sc->sc_intrarg;
-
 	while (uio->uio_resid > 0 && !err) {
+		mutex_enter(&sc->sc_lock);
+		intr = sc->sc_intr;
+		intrarg = sc->sc_intrarg;
+
 		getmicrotime(&now);
 		nowusec = (now.tv_sec * 1000000) + now.tv_usec;
 		lastusec = (sc->sc_last.tv_sec * 1000000) +
 		     sc->sc_last.tv_usec;
-		if (lastusec + TIMENEXTREAD > nowusec &&
-		     sc->sc_bytes_count >= BYTESTOSLEEP) {
-			wait_ticks = (hz * ((lastusec + TIMENEXTREAD) -
-			     nowusec)) / 1000000;
-			if (wait_ticks > 0) {
-				kpause("padwait", TRUE, wait_ticks,
-				     &sc->sc_lock);
+		if (lastusec + TIMENEXTREAD > nowusec) {
+			if (sc->sc_bytes_count >= BYTESTOSLEEP) {
+				sc->sc_remainder +=
+				    ((lastusec + TIMENEXTREAD) - nowusec);
 			}
+			
+			wait_ticks = (hz * sc->sc_remainder) / 1000000;
+			if (wait_ticks > 0) {
+				sc->sc_remainder -= wait_ticks * 1000000 / hz;
+				kpause("padwait", TRUE, wait_ticks,
+				    &sc->sc_lock);
+			}
+		}
 
+		if (sc->sc_bytes_count >= BYTESTOSLEEP)
 			sc->sc_bytes_count -= BYTESTOSLEEP;
-			getmicrotime(&sc->sc_last);
-		} else if (sc->sc_bytes_count >= BYTESTOSLEEP) {
-			sc->sc_bytes_count -= BYTESTOSLEEP;
-			getmicrotime(&sc->sc_last);
-		} else if (lastusec + TIMENEXTREAD <= nowusec)
-			getmicrotime(&sc->sc_last);
 
 		err = pad_get_block(sc, &pb, min(uio->uio_resid, PAD_BLKSIZE));
 		if (!err) {
+			getmicrotime(&sc->sc_last);
 			sc->sc_bytes_count += pb.pb_len;
-
 			mutex_exit(&sc->sc_lock);
 			err = uiomove(pb.pb_ptr, pb.pb_len, uio);
-			mutex_enter(&sc->sc_lock);
 			continue;
 		}
 
@@ -407,16 +404,17 @@ pad_read(dev_t dev, struct uio *uio, int flags)
 			intr = sc->sc_intr;
 			intrarg = sc->sc_intrarg;
 			err = 0;
+			mutex_exit(&sc->sc_lock);
 			continue;
 		}
 		err = cv_wait_sig(&sc->sc_condvar, &sc->sc_lock);
-		if (err != 0)
+		if (err != 0) {
+			mutex_exit(&sc->sc_lock);
 			break;
+		}
 
-		intr = sc->sc_intr;
-		intrarg = sc->sc_intrarg;
+		mutex_exit(&sc->sc_lock);
 	}
-	mutex_exit(&sc->sc_lock);
 
 	return err;
 }
@@ -431,6 +429,9 @@ pad_audio_open(void *opaque, int flags)
 		return EIO;
 
 	getmicrotime(&sc->sc_last);
+	sc->sc_bytes_count = 0;
+	sc->sc_remainder = 0;
+
 	return 0;
 }
 
@@ -719,7 +720,7 @@ pad_swvol_dtor(stream_filter_t *this)
 
 #ifdef _MODULE
 
-MODULE(MODULE_CLASS_DRIVER, pad, NULL);
+MODULE(MODULE_CLASS_DRIVER, pad, "audio");
 
 static const struct cfiattrdata audiobuscf_iattrdata = {
 	"audiobus", 0, { { NULL, NULL, 0 }, }

@@ -1,4 +1,4 @@
-/* $NetBSD: fdtvar.h,v 1.7 2016/01/05 21:53:48 marty Exp $ */
+/* $NetBSD: fdtvar.h,v 1.20 2017/06/02 13:53:29 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,9 +31,12 @@
 
 #include <sys/types.h>
 #include <sys/bus.h>
+#include <sys/termios.h>
 
 #include <dev/i2c/i2cvar.h>
 #include <dev/clk/clk.h>
+
+#include <dev/clock_subr.h>
 
 #include <dev/ofw/openfirm.h>
 
@@ -43,9 +46,7 @@ struct fdt_attach_args {
 	bus_space_tag_t faa_a4x_bst;
 	bus_dma_tag_t faa_dmat;
 	int faa_phandle;
-
-	const char **faa_init;
-	int faa_ninit;
+	int faa_quiet;
 };
 
 /* flags for fdtbus_intr_establish */
@@ -97,6 +98,8 @@ struct fdtbus_regulator_controller_func {
 	int	(*acquire)(device_t);
 	void	(*release)(device_t);
 	int	(*enable)(device_t, bool);
+	int	(*set_voltage)(device_t, u_int, u_int);
+	int	(*get_voltage)(device_t, u_int *);
 };
 
 struct fdtbus_clock_controller_func {
@@ -117,6 +120,78 @@ struct fdtbus_reset_controller_func {
 	int	(*reset_deassert)(device_t, void *);
 };
 
+struct fdtbus_dma_controller;
+
+struct fdtbus_dma {
+	struct fdtbus_dma_controller *dma_dc;
+	void *dma_priv;
+};
+
+enum fdtbus_dma_dir {
+	FDT_DMA_READ,		/* device -> memory */
+	FDT_DMA_WRITE		/* memory -> device */
+};
+
+struct fdtbus_dma_opt {
+	int opt_bus_width;		/* Bus width */
+	int opt_burst_len;		/* Burst length */
+	int opt_swap;			/* Enable data swapping */
+	int opt_dblbuf;			/* Enable double buffering */
+	int opt_wrap_len;		/* Address wrap-around window */
+};
+
+struct fdtbus_dma_req {
+	bus_dma_segment_t *dreq_segs;	/* Memory */
+	int dreq_nsegs;
+
+	bus_addr_t dreq_dev_phys;	/* Device */
+	int dreq_sel;			/* Device selector */
+
+	enum fdtbus_dma_dir dreq_dir;	/* Transfer direction */
+
+	int dreq_block_irq;		/* Enable IRQ at end of block */
+	int dreq_block_multi;		/* Enable multiple block transfers */
+	int dreq_flow;			/* Enable flow control */
+
+	struct fdtbus_dma_opt dreq_mem_opt;	/* Memory options */
+	struct fdtbus_dma_opt dreq_dev_opt;	/* Device options */
+};
+
+struct fdtbus_dma_controller_func {
+	void *	(*acquire)(device_t, const void *, size_t,
+			   void (*)(void *), void *);
+	void	(*release)(device_t, void *);
+	int	(*transfer)(device_t, void *, struct fdtbus_dma_req *);
+	void	(*halt)(device_t, void *);
+};
+
+struct fdtbus_power_controller;
+
+struct fdtbus_power_controller_func {
+	void 	(*reset)(device_t);
+	void	(*poweroff)(device_t);
+};
+
+struct fdt_console {
+	int	(*match)(int);
+	void	(*consinit)(struct fdt_attach_args *, u_int);
+};
+
+struct fdt_console_info {
+	const struct fdt_console *ops;
+};
+
+#define	_FDT_CONSOLE_REGISTER(name)	\
+	__link_set_add_rodata(fdt_consoles, __CONCAT(name,_consinfo));
+
+#define	FDT_CONSOLE(_name, _ops)					\
+static const struct fdt_console_info __CONCAT(_name,_consinfo) = {	\
+	.ops = (_ops)							\
+};									\
+_FDT_CONSOLE_REGISTER(_name)
+
+TAILQ_HEAD(fdt_conslist, fdt_console_info);
+
 int		fdtbus_register_interrupt_controller(device_t, int,
 		    const struct fdtbus_interrupt_controller_func *);
 int		fdtbus_register_i2c_controller(device_t, int,
@@ -131,8 +206,13 @@ int		fdtbus_register_clock_controller(device_t, int,
 		    const struct fdtbus_clock_controller_func *);
 int		fdtbus_register_reset_controller(device_t, int,
 		    const struct fdtbus_reset_controller_func *);
+int		fdtbus_register_dma_controller(device_t, int,
+		    const struct fdtbus_dma_controller_func *);
+int		fdtbus_register_power_controller(device_t, int,
+		    const struct fdtbus_power_controller_func *);
 
 int		fdtbus_get_reg(int, u_int, bus_addr_t *, bus_size_t *);
+int		fdtbus_get_reg64(int, u_int, uint64_t *, uint64_t *);
 int		fdtbus_get_phandle(int, const char *);
 int		fdtbus_get_phandle_from_native(int);
 i2c_tag_t	fdtbus_get_i2c_tag(int);
@@ -152,6 +232,18 @@ struct fdtbus_regulator *fdtbus_regulator_acquire(int, const char *);
 void		fdtbus_regulator_release(struct fdtbus_regulator *);
 int		fdtbus_regulator_enable(struct fdtbus_regulator *);
 int		fdtbus_regulator_disable(struct fdtbus_regulator *);
+int		fdtbus_regulator_set_voltage(struct fdtbus_regulator *,
+		    u_int, u_int);
+int		fdtbus_regulator_get_voltage(struct fdtbus_regulator *,
+		    u_int *);
+
+struct fdtbus_dma *fdtbus_dma_get(int, const char *, void (*)(void *), void *);
+struct fdtbus_dma *fdtbus_dma_get_index(int, u_int, void (*)(void *),
+		    void *);
+void		fdtbus_dma_put(struct fdtbus_dma *);
+int		fdtbus_dma_transfer(struct fdtbus_dma *,
+		    struct fdtbus_dma_req *);
+void		fdtbus_dma_halt(struct fdtbus_dma *);
 
 struct clk *	fdtbus_clock_get(int, const char *);
 struct clk *	fdtbus_clock_get_index(int, u_int);
@@ -162,9 +254,26 @@ void		fdtbus_reset_put(struct fdtbus_reset *);
 int		fdtbus_reset_assert(struct fdtbus_reset *);
 int		fdtbus_reset_deassert(struct fdtbus_reset *);
 
+int		fdtbus_todr_attach(device_t, int, todr_chip_handle_t);
+
+void		fdtbus_power_reset(void);
+void		fdtbus_power_poweroff(void);
+
 bool		fdtbus_set_data(const void *);
 const void *	fdtbus_get_data(void);
 int		fdtbus_phandle2offset(int);
 int		fdtbus_offset2phandle(int);
+bool		fdtbus_get_path(int, char *, size_t);
+
+const struct fdt_console *fdtbus_get_console(void);
+
+const char *	fdtbus_get_stdout_path(void);
+int		fdtbus_get_stdout_phandle(void);
+int		fdtbus_get_stdout_speed(void);
+tcflag_t	fdtbus_get_stdout_flags(void);
+
+bool		fdtbus_status_okay(int);
+
+int		fdtbus_print(void *, const char *);
 
 #endif /* _DEV_FDT_FDTVAR_H */

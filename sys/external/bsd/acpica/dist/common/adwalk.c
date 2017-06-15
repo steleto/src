@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2016, Intel Corp.
+ * Copyright (C) 2000 - 2017, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -878,7 +878,7 @@ AcpiDmXrefDescendingOp (
              * method.
              */
             if (!(Op->Asl.Parent &&
-                (Op->Asl.Parent->Asl.AmlOpcode == AML_COND_REF_OF_OP)))
+                (Op->Asl.Parent->Asl.AmlOpcode == AML_CONDITIONAL_REF_OF_OP)))
             {
                 if (Node)
                 {

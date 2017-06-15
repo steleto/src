@@ -1,4 +1,4 @@
-/*	$NetBSD: eval.c,v 1.129 2017/01/10 20:43:08 christos Exp $	*/
+/*	$NetBSD: eval.c,v 1.146 2017/06/08 13:12:17 kre Exp $	*/
 
 /*-
  * Copyright (c) 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)eval.c	8.9 (Berkeley) 6/8/95";
 #else
-__RCSID("$NetBSD: eval.c,v 1.129 2017/01/10 20:43:08 christos Exp $");
+__RCSID("$NetBSD: eval.c,v 1.146 2017/06/08 13:12:17 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -199,7 +199,8 @@ evalcmd(int argc, char **argv)
                         p = grabstackstr(concat);
                 }
                 evalstring(p, builtin_flags & EV_TESTED);
-        }
+        } else
+		exitstatus = 0;
         return exitstatus;
 }
 
@@ -215,7 +216,7 @@ evalstring(char *s, int flag)
 	struct stackmark smark;
 
 	setstackmark(&smark);
-	setinputstring(s, 1);
+	setinputstring(s, 1, line_number);
 
 	while ((n = parsecmd(0)) != NEOF) {
 		TRACE(("evalstring: "); showtree(n));
@@ -238,6 +239,7 @@ void
 evaltree(union node *n, int flags)
 {
 	bool do_etest;
+	int sflags = flags & ~EV_EXIT;
 
 	do_etest = false;
 	if (n == NULL || nflag) {
@@ -258,7 +260,7 @@ evaltree(union node *n, int flags)
 #endif
 	switch (n->type) {
 	case NSEMI:
-		evaltree(n->nbinary.ch1, (flags & EV_TESTED) |
+		evaltree(n->nbinary.ch1, (sflags & EV_TESTED) |
 		    (n->nbinary.ch2 ? EV_MORE : 0));
 		if (nflag || evalskip)
 			goto out;
@@ -303,21 +305,28 @@ evaltree(union node *n, int flags)
 	}
 	case NWHILE:
 	case NUNTIL:
-		evalloop(n, flags);
+		evalloop(n, sflags);
 		break;
 	case NFOR:
-		evalfor(n, flags);
+		evalfor(n, sflags);
 		break;
 	case NCASE:
-		evalcase(n, flags);
+		evalcase(n, sflags);
 		break;
 	case NDEFUN:
-		defun(n->narg.text, n->narg.next);
+		CTRACE(DBG_EVAL, ("Defining fn %s @%d%s\n", n->narg.text,
+		    n->narg.lineno, fnline1 ? " LINENO=1" : ""));
+		defun(n->narg.text, n->narg.next, n->narg.lineno);
 		exitstatus = 0;
 		break;
 	case NNOT:
-		evaltree(n->nnot.com, (flags & EV_MORE) | EV_TESTED);
+		evaltree(n->nnot.com, (sflags & EV_MORE) | EV_TESTED);
 		exitstatus = !exitstatus;
+		break;
+	case NDNOT:
+		evaltree(n->nnot.com, (sflags & EV_MORE) | EV_TESTED);
+		if (exitstatus != 0)
+			exitstatus = 1;
 		break;
 	case NPIPE:
 		evalpipe(n);
@@ -366,7 +375,7 @@ evalloop(union node *n, int flags)
 		if (nflag)
 			break;
 		if (evalskip) {
-skipping:	  if (evalskip == SKIPCONT && --skipcount <= 0) {
+ skipping:		if (evalskip == SKIPCONT && --skipcount <= 0) {
 				evalskip = SKIPNONE;
 				continue;
 			}
@@ -419,6 +428,16 @@ evalfor(union node *n, int flags)
 		if (sp->next)
 			f |= EV_MORE;
 
+		if (xflag) {
+			out2str(ps4val());
+			out2str("for ");
+			out2str(n->nfor.var);
+			out2c('=');
+			out2shstr(sp->text);
+			out2c('\n');
+			flushout(&errout);
+		}
+
 		setvar(n->nfor.var, sp->text, 0);
 		evaltree(n->nfor.body, f);
 		status = exitstatus;
@@ -445,7 +464,7 @@ out:
 STATIC void
 evalcase(union node *n, int flags)
 {
-	union node *cp;
+	union node *cp, *ncp;
 	union node *patp;
 	struct arglist arglist;
 	struct stackmark smark;
@@ -453,19 +472,29 @@ evalcase(union node *n, int flags)
 
 	setstackmark(&smark);
 	arglist.lastp = &arglist.list;
+	line_number = n->ncase.lineno;
 	expandarg(n->ncase.expr, &arglist, EXP_TILDE);
-	for (cp = n->ncase.cases ; cp && evalskip == 0 ; cp = cp->nclist.next) {
-		for (patp = cp->nclist.pattern ; patp ; patp = patp->narg.next) {
+	for (cp = n->ncase.cases; cp && evalskip == 0; cp = cp->nclist.next) {
+		for (patp = cp->nclist.pattern; patp; patp = patp->narg.next) {
+			line_number = patp->narg.lineno;
 			if (casematch(patp, arglist.list->text)) {
-				if (evalskip == 0) {
-					evaltree(cp->nclist.body, flags);
+				while (cp != NULL && evalskip == 0 &&
+				    nflag == 0) {
+					if (cp->type == NCLISTCONT)
+						ncp = cp->nclist.next;
+					else
+						ncp = NULL;
+					line_number = cp->nclist.lineno;
+					evaltree(cp->nclist.body,
+					    ncp ? (flags | EV_MORE) : flags);
 					status = exitstatus;
+					cp = ncp;
 				}
 				goto out;
 			}
 		}
 	}
-out:
+ out:
 	exitstatus = status;
 	popstackmark(&smark);
 }
@@ -739,18 +768,25 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 	char * volatile lastarg;
 	const char * volatile path = pathval();
 	volatile int temp_path;
+	const int savefuncline = funclinebase;
+	const int savefuncabs = funclineabs;
 
 	vforked = 0;
 	/* First expand the arguments. */
-	TRACE(("evalcommand(0x%lx, %d) called\n", (long)cmd, flags));
+	TRACE(("evalcommand(%p, %d) called\n", cmd, flags));
 	setstackmark(&smark);
 	back_exitstatus = 0;
+
+	if (cmd != NULL)
+		line_number = cmd->ncmd.lineno;
 
 	arglist.lastp = &arglist.list;
 	varflag = 1;
 	/* Expand arguments, ignoring the initial 'name=value' ones */
 	for (argp = cmd->ncmd.args ; argp ; argp = argp->narg.next) {
 		char *p = argp->narg.text;
+
+		line_number = argp->narg.lineno;
 		if (varflag && is_name(*p)) {
 			do {
 				p++;
@@ -769,6 +805,8 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 	varlist.lastp = &varlist.list;
 	for (argp = cmd->ncmd.args ; argp ; argp = argp->narg.next) {
 		char *p = argp->narg.text;
+
+		line_number = argp->narg.lineno;
 		if (!is_name(*p))
 			break;
 		do
@@ -849,6 +887,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 
 		do {
 			int argsused, use_syspath;
+
 			find_command(argv[0], &cmdentry, cmd_flags, path);
 			if (cmdentry.cmdtype == CMDUNKNOWN) {
 				exitstatus = 127;
@@ -907,6 +946,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 			savelocalvars = localvars;
 			localvars = NULL;
 			vforked = 1;
+	VFORK_BLOCK
 			switch (pid = vfork()) {
 			case -1:
 				serrno = errno;
@@ -918,6 +958,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 				/* Make sure that exceptions only unwind to
 				 * after the vfork(2)
 				 */
+				SHELL_FORKED();
 				if (setjmp(jmploc.loc)) {
 					if (exception == EXSHELLPROC) {
 						/* We can't progress with the vfork,
@@ -936,6 +977,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 				forkchild(jp, cmd, mode, vforked);
 				break;
 			default:
+				VFORK_UNDO();
 				handler = savehandler;	/* restore from vfork(2) */
 				poplocalvars();
 				localvars = savelocalvars;
@@ -950,6 +992,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 				forkparent(jp, cmd, mode, pid);
 				goto parent;
 			}
+	VFORK_END
 		} else {
 normal_fork:
 #endif
@@ -997,11 +1040,27 @@ normal_fork:
 			}
 			poplocalvars();
 			localvars = savelocalvars;
+			funclinebase = savefuncline;
+			funclineabs = savefuncabs;
 			handler = savehandler;
 			longjmp(handler->loc, 1);
 		}
 		savehandler = handler;
 		handler = &jmploc;
+		if (cmdentry.u.func) {
+			if (cmdentry.lno_frel)
+				funclinebase = cmdentry.lineno - 1;
+			else
+				funclinebase = 0;
+			funclineabs = cmdentry.lineno;
+
+			VTRACE(DBG_EVAL,
+			  ("function: node: %d '%s' # %d%s; funclinebase=%d\n",
+			    cmdentry.u.func->type,
+			    NODETYPENAME(cmdentry.u.func->type),
+			    cmdentry.lineno, cmdentry.lno_frel?" (=1)":"",
+			    funclinebase));
+		}
 		listmklocal(varlist.list, VEXPORT);
 		/* stop shell blowing its stack */
 		if (++funcnest > 1000)
@@ -1011,6 +1070,8 @@ normal_fork:
 		INTOFF;
 		poplocalvars();
 		localvars = savelocalvars;
+		funclinebase = savefuncline;
+		funclineabs = savefuncabs;
 		freeparam(&shellparam);
 		shellparam = saveparam;
 		handler = savehandler;
@@ -1044,7 +1105,7 @@ normal_fork:
 		temp_path = 0;
 		if (!setjmp(jmploc.loc)) {
 			/* We need to ensure the command hash table isn't
-			 * corruped by temporary PATH assignments.
+			 * corrupted by temporary PATH assignments.
 			 * However we must ensure the 'local' command works!
 			 */
 			if (path != pathval() && (cmdentry.u.bltin == hashcmd ||
@@ -1133,10 +1194,7 @@ parent:	/* parent process gets here (if we forked) */
 
 out:
 	if (lastarg)
-		/* dsl: I think this is intended to be used to support
-		 * '_' in 'vi' command mode during line editing...
-		 * However I implemented that within libedit itself.
-		 */
+		/* implement $_ for whatever use that really is */
 		setvar("_", lastarg, 0);
 	popstackmark(&smark);
 }
@@ -1215,6 +1273,8 @@ breakcmd(int argc, char **argv)
 {
 	int n = argc > 1 ? number(argv[1]) : 1;
 
+	if (n <= 0)
+		error("invalid count: %d", n);
 	if (n > loopnest)
 		n = loopnest;
 	if (n > 0) {
@@ -1273,7 +1333,7 @@ find_dot_file(char *basename)
 				error("%s: is a block device", basename);
 			return basename;
 		}
-	} else while ((fullname = padvance(&path, basename)) != NULL) {
+	} else while ((fullname = padvance(&path, basename, 1)) != NULL) {
 		if ((stat(fullname, &statb) == 0)) {
 			/* weird format is to ease future code... */
 			if (S_ISDIR(statb.st_mode) || S_ISBLK(statb.st_mode))

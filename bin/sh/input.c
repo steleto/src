@@ -1,4 +1,4 @@
-/*	$NetBSD: input.c,v 1.51 2016/06/01 05:11:52 kre Exp $	*/
+/*	$NetBSD: input.c,v 1.58 2017/06/07 05:08:32 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)input.c	8.3 (Berkeley) 6/9/95";
 #else
-__RCSID("$NetBSD: input.c,v 1.51 2016/06/01 05:11:52 kre Exp $");
+__RCSID("$NetBSD: input.c,v 1.58 2017/06/07 05:08:32 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -65,13 +65,14 @@ __RCSID("$NetBSD: input.c,v 1.51 2016/06/01 05:11:52 kre Exp $");
 #include "alias.h"
 #include "parser.h"
 #include "myhistedit.h"
+#include "show.h"
 
 #define EOF_NLEFT -99		/* value of parsenleft when EOF pushed back */
 
 MKINIT
 struct strpush {
 	struct strpush *prev;	/* preceding string on stack */
-	char *prevstring;
+	const char *prevstring;
 	int prevnleft;
 	int prevlleft;
 	struct alias *ap;	/* if push was associated with an alias */
@@ -89,7 +90,7 @@ struct parsefile {
 	int fd;			/* file descriptor (or -1 if string) */
 	int nleft;		/* number of chars left in this line */
 	int lleft;		/* number of chars left in this buffer */
-	char *nextc;		/* next char in buffer */
+	const char *nextc;	/* next char in buffer */
 	char *buf;		/* input buffer */
 	struct strpush *strpush; /* for pushing strings at this level */
 	struct strpush basestrpush; /* so pushing one is fast */
@@ -99,7 +100,7 @@ struct parsefile {
 int plinno = 1;			/* input line number */
 int parsenleft;			/* copy of parsefile->nleft */
 MKINIT int parselleft;		/* copy of parsefile->lleft */
-char *parsenextc;		/* copy of parsefile->nextc */
+const char *parsenextc;		/* copy of parsefile->nextc */
 MKINIT struct parsefile basepf;	/* top level input file */
 MKINIT char basebuf[BUFSIZ];	/* buffer for top level input file */
 struct parsefile *parsefile = &basepf;	/* current input file */
@@ -244,7 +245,7 @@ preadbuffer(void)
 #endif
 	char savec;
 
-	if (parsefile->strpush) {
+	while (parsefile->strpush) {
 		popstring();
 		if (--parsenleft >= 0)
 			return (*parsenextc++);
@@ -262,7 +263,9 @@ again:
 		}
 	}
 
-	q = p = parsenextc;
+		/* p = (not const char *)parsenextc; */
+	p = parsefile->buf + (parsenextc - parsefile->buf);
+	q = p;
 
 	/* delete nul characters */
 #ifndef SMALL
@@ -341,7 +344,7 @@ pungetc(void)
  * We handle aliases this way.
  */
 void
-pushstring(char *s, int len, void *ap)
+pushstring(const char *s, int len, struct alias *ap)
 {
 	struct strpush *sp;
 
@@ -356,9 +359,9 @@ pushstring(char *s, int len, void *ap)
 	sp->prevstring = parsenextc;
 	sp->prevnleft = parsenleft;
 	sp->prevlleft = parselleft;
-	sp->ap = (struct alias *)ap;
+	sp->ap = ap;
 	if (ap)
-		((struct alias *)ap)->flag |= ALIASINUSE;
+		ap->flag |= ALIASINUSE;
 	parsenextc = s;
 	parsenleft = len;
 	INTON;
@@ -428,6 +431,24 @@ setinputfile(const char *fname, int push)
 	INTON;
 }
 
+/*
+ * When a shell fd needs to be altered (when the user wants to use
+ * the same fd - rare, but happens - we need to locate the ref to
+ * the fd, and update it.  This happens via a callback.
+ * This is the callback func for fd's used for shell input
+ */
+static void
+input_fd_swap(int from, int to)
+{
+	struct parsefile *pf;
+
+	pf = parsefile;
+	while (pf != NULL) {		/* don't need to stop at basepf */
+		if (pf->fd == from)
+			pf->fd = to;
+		pf = pf->prev;
+	}
+}
 
 /*
  * Like setinputfile, but takes an open file descriptor.  Call this with
@@ -437,13 +458,14 @@ setinputfile(const char *fname, int push)
 void
 setinputfd(int fd, int push)
 {
+	register_sh_fd(fd, input_fd_swap);
 	(void) fcntl(fd, F_SETFD, FD_CLOEXEC);
 	if (push) {
 		pushfile();
 		parsefile->buf = ckmalloc(BUFSIZ);
 	}
 	if (parsefile->fd > 0)
-		close(parsefile->fd);
+		sh_close(parsefile->fd);
 	parsefile->fd = fd;
 	if (parsefile->buf == NULL)
 		parsefile->buf = ckmalloc(BUFSIZ);
@@ -457,16 +479,18 @@ setinputfd(int fd, int push)
  */
 
 void
-setinputstring(char *string, int push)
+setinputstring(char *string, int push, int line1)
 {
 
 	INTOFF;
-	if (push)
+	if (push)		/* XXX: always, as it happens */
 		pushfile();
 	parsenextc = string;
 	parselleft = parsenleft = strlen(string);
 	parsefile->buf = NULL;
-	plinno = 1;
+	plinno = line1;
+	TRACE(("setinputstring(\"%.20s%s\" (%d), %d, %d)\n", string,
+	    (parsenleft > 20 ? "..." : ""), parsenleft, push, line1));
 	INTON;
 }
 
@@ -502,7 +526,7 @@ popfile(void)
 
 	INTOFF;
 	if (pf->fd >= 0)
-		close(pf->fd);
+		sh_close(pf->fd);
 	if (pf->buf)
 		ckfree(pf->buf);
 	while (pf->strpush)
@@ -551,7 +575,7 @@ closescript(int vforked)
 		return;
 	popallfiles();
 	if (parsefile->fd > 0) {
-		close(parsefile->fd);
+		sh_close(parsefile->fd);
 		parsefile->fd = 0;
 	}
 }

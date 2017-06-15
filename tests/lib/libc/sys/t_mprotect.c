@@ -1,4 +1,4 @@
-/* $NetBSD: t_mprotect.c,v 1.4 2016/05/28 14:34:49 christos Exp $ */
+/* $NetBSD: t_mprotect.c,v 1.7 2017/05/06 21:34:52 joerg Exp $ */
 
 /*-
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: t_mprotect.c,v 1.4 2016/05/28 14:34:49 christos Exp $");
+__RCSID("$NetBSD: t_mprotect.c,v 1.7 2017/05/06 21:34:52 joerg Exp $");
 
 #include <sys/param.h>
 #include <sys/mman.h>
@@ -47,13 +47,10 @@ __RCSID("$NetBSD: t_mprotect.c,v 1.4 2016/05/28 14:34:49 christos Exp $");
 #include "../common/exec_prot.h"
 
 static long	page = 0;
-static int	pax_global = -1;
-static int	pax_enabled = -1;
 static char	path[] = "mmap";
 
 static void	sighandler(int);
 static bool	paxinit(void);
-static bool	paxset(int, int);
 
 static void
 sighandler(int signo)
@@ -65,41 +62,17 @@ static bool
 paxinit(void)
 {
 	size_t len = sizeof(int);
+	int pax_flags;
 	int rv;
 
-	rv = sysctlbyname("security.pax.mprotect.global",
-	    &pax_global, &len, NULL, 0);
+	rv = sysctlbyname("proc.curproc.paxflags",
+	    &pax_flags, &len, NULL, 0);
 
 	if (rv != 0)
 		return false;
 
-	rv = sysctlbyname("security.pax.mprotect.enabled",
-	    &pax_enabled, &len, NULL, 0);
-
-	return rv == 0;
+	return ((pax_flags & CTL_PROC_PAXFLAGS_MPROTECT) != 0);
 }
-
-static bool
-paxset(int global, int enabled)
-{
-	size_t len = sizeof(int);
-	int rv;
-
-	rv = sysctlbyname("security.pax.mprotect.global",
-	    NULL, NULL, &global, len);
-
-	if (rv != 0)
-		return false;
-
-	rv = sysctlbyname("security.pax.mprotect.enabled",
-	    NULL, NULL, &enabled, len);
-
-	if (rv != 0)
-		return false;
-
-	return true;
-}
-
 
 ATF_TC_WITH_CLEANUP(mprotect_access);
 ATF_TC_HEAD(mprotect_access, tc)
@@ -188,12 +161,6 @@ ATF_TC_BODY(mprotect_exec, tc)
 		break;
 	}
 
-	if (!paxinit())
-		return;
-	if (pax_enabled == 1 && pax_global == 1)
-		atf_tc_skip("PaX MPROTECT restrictions enabled");
-		
-
 	/*
 	 * Map a page read/write and copy a trivial assembly function inside.
 	 * We will then change the mapping rights:
@@ -203,7 +170,8 @@ ATF_TC_BODY(mprotect_exec, tc)
 	 *   a SIGSEGV on architectures that can enforce --x permissions.
 	 */
 
-	map = mmap(NULL, page, PROT_WRITE|PROT_READ, MAP_ANON, -1, 0);
+	map = mmap(NULL, page, PROT_MPROTECT(PROT_EXEC)|PROT_WRITE|PROT_READ,
+	    MAP_ANON, -1, 0);
 	ATF_REQUIRE(map != MAP_FAILED);
 
 	memcpy(map, (void *)return_one,
@@ -261,8 +229,8 @@ ATF_TC_BODY(mprotect_pax, tc)
 	size_t i;
 	int rv;
 
-	if (!paxinit() || !paxset(1, 1))
-		return;
+	if (!paxinit())
+		atf_tc_skip("PaX MPROTECT restrictions not enabled");
 
 	/*
 	 * As noted in the original PaX documentation [1],
@@ -302,9 +270,6 @@ ATF_TC_BODY(mprotect_pax, tc)
 	}
 
 out:
-	if (pax_global != -1 && pax_enabled != -1)
-		(void)paxset(pax_global, pax_enabled);
-
 	if (str != NULL)
 		atf_tc_fail("%s", str);
 }
@@ -347,6 +312,77 @@ ATF_TC_BODY(mprotect_write, tc)
 	ATF_REQUIRE(munmap(map, page) == 0);
 }
 
+ATF_TC(mprotect_mremap_exec);
+ATF_TC_HEAD(mprotect_mremap_exec, tc)
+{
+	atf_tc_set_md_var(tc, "descr",
+	    "Test mremap(2)+mprotect(2) executable space protections");
+}
+
+/*
+ * Trivial function -- should fit into a page
+ */
+ATF_TC_BODY(mprotect_mremap_exec, tc)
+{
+	void *map, *map2;
+	pid_t pid;
+	int sta;
+
+	/*
+	 * Map a page read/write/exec and duplicate it.
+	 * Map the copy executable.
+	 * Copy a trivial assembly function to the writeable mapping.
+	 * Try to execute it. This should never create a SIGSEGV.
+	 */
+
+	map = mmap(NULL, page, PROT_MPROTECT(PROT_EXEC|PROT_WRITE|PROT_READ),
+	    MAP_ANON, -1, 0);
+	ATF_REQUIRE(map != MAP_FAILED);
+	map2 = mremap(map, page, NULL, page, MAP_REMAPDUP);
+	ATF_REQUIRE(map2 != MAP_FAILED);
+	ATF_REQUIRE(mprotect(map, page, PROT_WRITE|PROT_READ) == 0);
+	ATF_REQUIRE(mprotect(map2, page, PROT_EXEC|PROT_READ) == 0);
+
+	memcpy(map, (void *)return_one,
+	    (uintptr_t)return_one_end - (uintptr_t)return_one);
+	__builtin___clear_cache(map, (void *)((uintptr_t)map + page));
+
+	ATF_REQUIRE(((int (*)(void))map2)() == 1);
+
+	/* Double check that the executable mapping is not writeable. */
+	pid = fork();
+	ATF_REQUIRE(pid >= 0);
+
+	if (pid == 0) {
+		ATF_REQUIRE(signal(SIGSEGV, sighandler) != SIG_ERR);
+		ATF_REQUIRE(strlcpy(map2, "XXX", 3) == 0);
+	}
+
+	(void)wait(&sta);
+
+	ATF_REQUIRE(WIFEXITED(sta) != 0);
+	ATF_REQUIRE(WEXITSTATUS(sta) == SIGSEGV);
+
+	if (exec_prot_support() == PERPAGE_XP) {
+		/* Double check that the writeable mapping is not executable. */
+		pid = fork();
+		ATF_REQUIRE(pid >= 0);
+
+		if (pid == 0) {
+			ATF_REQUIRE(signal(SIGSEGV, sighandler) != SIG_ERR);
+			ATF_REQUIRE(((int (*)(void))map)() == 1);
+		}
+
+		(void)wait(&sta);
+
+		ATF_REQUIRE(WIFEXITED(sta) != 0);
+		ATF_REQUIRE(WEXITSTATUS(sta) == SIGSEGV);
+	}
+
+	ATF_REQUIRE(munmap(map, page) == 0);
+	ATF_REQUIRE(munmap(map2, page) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	page = sysconf(_SC_PAGESIZE);
@@ -357,6 +393,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, mprotect_exec);
 	ATF_TP_ADD_TC(tp, mprotect_pax);
 	ATF_TP_ADD_TC(tp, mprotect_write);
+	ATF_TP_ADD_TC(tp, mprotect_mremap_exec);
 
 	return atf_no_error();
 }

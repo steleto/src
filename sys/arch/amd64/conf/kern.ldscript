@@ -1,4 +1,4 @@
-/*	$NetBSD: kern.ldscript,v 1.21 2016/05/12 09:05:16 maxv Exp $	*/
+/*	$NetBSD: kern.ldscript,v 1.23 2017/06/14 07:45:45 maxv Exp $	*/
 
 #include "assym.h"
 
@@ -35,7 +35,7 @@ SECTIONS
 		*(.rodata.*)
 	}
 
-	. = ALIGN(__PAGE_SIZE);
+	. = ALIGN(__LARGE_PAGE_SIZE);
 
 	__data_start = . ;
 	.data :
@@ -63,7 +63,7 @@ SECTIONS
 		*(.bss)
 		*(.bss.*)
 		*(COMMON)
-		. = ALIGN(64 / 8);
+		. = ALIGN(__LARGE_PAGE_SIZE);
 	}
 
 	. = ALIGN(__PAGE_SIZE);

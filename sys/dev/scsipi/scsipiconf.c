@@ -1,4 +1,4 @@
-/*	$NetBSD: scsipiconf.c,v 1.42 2016/11/20 15:37:19 mlelstv Exp $	*/
+/*	$NetBSD: scsipiconf.c,v 1.44 2017/04/11 14:32:43 christos Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2004 The NetBSD Foundation, Inc.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scsipiconf.c,v 1.42 2016/11/20 15:37:19 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scsipiconf.c,v 1.44 2017/04/11 14:32:43 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

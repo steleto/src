@@ -1,5 +1,5 @@
 .\" $OpenBSD: rum.4,v 1.17 2006/10/22 08:29:01 damien Exp $
-.\" $NetBSD: rum.4,v 1.8 2014/03/18 18:20:39 riastradh Exp $
+.\" $NetBSD: rum.4,v 1.10 2017/05/23 13:55:32 wiz Exp $
 .\"
 .\" Copyright (c) 2005, 2006
 .\"	Damien Bergamini <damien.bergamini@free.fr>
@@ -16,7 +16,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd February 7, 2007
+.Dd May 5, 2017
 .Dt RUM 4
 .Os
 .Sh NAME
@@ -241,6 +241,7 @@ The following adapters should work:
 .It Senao NUB-3701
 .It Sitecom WL-113 ver 2
 .It Sitecom WL-172
+.It Synet MW-P54SS
 .It TP-LINK TL-WN321G
 .El
 .Sh EXAMPLES
@@ -325,3 +326,12 @@ driver supports automatic control of the transmit speed in BSS mode only.
 Therefore the use of a
 .Nm
 adapter in Host AP mode is discouraged.
+.Pp
+The Synet MW-P54SS USB Wireless Broadband Router first attaches as a virtual
+.Xr cd 4
+device on the
+.Xr umass 4
+mass storage bus.
+It will re-attach with this driver after using
+.Xr eject 1
+on the corresponding device.

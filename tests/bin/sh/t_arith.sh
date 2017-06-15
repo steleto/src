@@ -1,4 +1,4 @@
-# $NetBSD: t_arith.sh,v 1.5 2016/05/12 14:25:11 kre Exp $
+# $NetBSD: t_arith.sh,v 1.7 2017/06/02 01:50:48 kre Exp $
 #
 # Copyright (c) 2016 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -818,6 +818,30 @@ logical_or_body()
 		'echo $(( 0x33 || 0xF0F0 ))'
 }
 
+atf_test_case nested_arith
+nested_arith_head()
+{
+	atf_set "descr" 'Test nested arithmetic $(( $(( )) ))'
+}
+nested_arith_body()
+{
+	atf_check -s exit:0 -o inline:'0\n' -e empty ${TEST_SH} -c \
+		'echo $(( $(( 0 )) ))'
+	atf_check -s exit:0 -o inline:'1\n' -e empty ${TEST_SH} -c \
+		'echo $(( 1 + $(( 2 - 2 )) ))'
+	atf_check -s exit:0 -o inline:'1\n' -e empty ${TEST_SH} -c \
+		'echo $(( $(( 3 / 3 )) + $((1*1*1)) - $(( 7 % 6 ))))'
+	atf_check -s exit:0 -o inline:'1\n' -e empty ${TEST_SH} -c \
+		'echo $(($(($(($(($((1))))))))))'
+
+	atf_check -s exit:0 -o inline:'246\n' -e empty ${TEST_SH} -c \
+		'echo $(( 2$((2 * 2))6 ))'
+	atf_check -s exit:0 -o inline:'291117\n' -e empty ${TEST_SH} -c \
+		'echo $(( $((1 + 1))$((3 * 3))$(( 99-88 ))$(( 17))))'
+	atf_check -s exit:0 -o inline:'123456789\n' -e empty ${TEST_SH} -c \
+	  'echo $(( 1$((2$((1+2))4$((2 + 2 + 1))6))7$((4 * 2))$(($((81/9))))))'
+}
+
 atf_test_case make_selection
 make_selection_head()
 {
@@ -980,6 +1004,63 @@ parentheses_body()
 		'echo $(( (0xfD & 0xF) == 0xF ))'
 }
 
+atf_test_case var_assign
+var_assign_head()
+{
+	atf_set "descr" "Test assignment operators in arithmetic expressions"
+}
+var_assign_body()
+{
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'unset x; echo $(( x = 3 )); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'unset x; echo $((x=3)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=5; echo $((x=3)); echo $x'
+
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'set +u;unset x; echo $((x+=3)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=2; echo $((x+=1)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=4; echo $((x-=1)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=3; echo $((x*=1)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=3; echo $((x/=1)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=28; echo $((x%=5)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=7; echo $((x&=3)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=2; echo $((x|=1)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=6; echo $((x^=5)); echo $x'
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'x=7; echo $((x>>=1)); echo $x'
+	atf_check -s exit:0 -o inline:'2\n2\n' -e empty ${TEST_SH} -c \
+		'x=1; echo $((x<<=1)); echo $x'
+
+	atf_check -s exit:0 -o inline:'2\n3\n' -e empty ${TEST_SH} -c \
+		'x=2; echo $(( (x+=1)-1 )); echo $x'
+	atf_check -s exit:0 -o inline:'4\n3\n' -e empty ${TEST_SH} -c \
+		'x=4; echo $(( (x-=1)+1 )); echo $x'
+
+	atf_check -s exit:0 -o inline:'36\n5 7\n' -e empty ${TEST_SH} -c \
+		'unset x y; echo $(( (x=5) * (y=7) + 1 )); echo $x $y'
+	atf_check -s exit:0 -o inline:'36\n5 7\n' -e empty ${TEST_SH} -c \
+		'x=99; y=17; echo $(( (x=5) * (y=7) + 1 )); echo $x $y'
+	atf_check -s exit:0 -o inline:'36\n5 7\n' -e empty ${TEST_SH} -c \
+		'x=4; y=9; echo $(( (x+=1) * (y-=2) + 1 )); echo $x $y'
+
+	atf_check -s exit:0 -o inline:'3\n3\n' -e empty ${TEST_SH} -c \
+		'set -u; unset x; echo $(( x = 3 )); echo $x'
+	atf_check -s not-exit:0 -o ignore -e not-empty ${TEST_SH} -c \
+		'set -u; unset x; echo $(( x + 3 )); echo $x'
+	atf_check -s not-exit:0 -o ignore -e not-empty ${TEST_SH} -c \
+		'set -u; unset x; echo $(( x+=3 )); echo $x'
+}
+
 atf_test_case arithmetic_fails
 arithmetic_fails_head()
 {
@@ -1025,11 +1106,12 @@ atf_init_test_cases() {
 	atf_add_test_case logical_and
 	atf_add_test_case logical_or
 	atf_add_test_case make_selection
+	atf_add_test_case nested_arith
 	atf_add_test_case operator_precedence
 	atf_add_test_case parentheses
 	# atf_add_test_case progressive			# build up big expr
 	# atf_add_test_case test_errors			# erroneous input
 	# atf_add_test_case torture		# hard stuff (if there is any)
-	# atf_add_test_case var_assign			# assignment ops
+	atf_add_test_case var_assign			# assignment ops
 	# atf_add_test_case vulgarity	# truly evil inputs (syntax in vars...)
 }

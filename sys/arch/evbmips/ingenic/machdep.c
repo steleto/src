@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.12 2016/12/22 14:47:57 cherry Exp $ */
+/*	$NetBSD: machdep.c,v 1.14 2017/05/21 06:49:12 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.12 2016/12/22 14:47:57 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.14 2017/05/21 06:49:12 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -61,6 +61,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.12 2016/12/22 14:47:57 cherry Exp $");
 #include <mips/locore.h>
 #include <mips/cpuregs.h>
 
+#include <mips/ingenic/ingenic_coreregs.h>
 #include <mips/ingenic/ingenic_regs.h>
 #include <mips/ingenic/ingenic_var.h>
 
@@ -97,7 +98,7 @@ cal_timer(void)
 	 */
 	curcpu()->ci_cpu_freq = 1200000000;	/* for now */
 	cntfreq = 12000000;	/* EXTCLK / 4 */
-	
+
 	curcpu()->ci_cctr_freq = cntfreq;
 	curcpu()->ci_cycles_per_hz = (cntfreq + hz / 2) / hz;
 
@@ -128,12 +129,12 @@ ingenic_cpu_init(struct cpu_info *ci)
 	uint32_t reg;
 
 	/* enable IPIs for this core */
-	reg = MFC0(12, 4);	/* reset entry and interrupts */
+	reg = mips_cp0_corereim_read();
 	if (cpu_index(ci) == 1) {
 		reg |= REIM_MIRQ1_M;
 	} else
 		reg |= REIM_MIRQ0_M;
-	MTC0(reg, 12, 4);
+	mips_cp0_corereim_write(reg);
 	printf("%s %d %08x\n", __func__, cpu_index(ci), reg);
 }
 
@@ -147,9 +148,9 @@ ingenic_send_ipi(struct cpu_info *ci, int tag)
 	mutex_enter(&ingenic_ipi_lock);
 	if (kcpuset_isset(cpus_running, cpu_index(ci))) {
 		if (cpu_index(ci) == 0) {
-			MTC0(msg, CP0_CORE_MBOX, 0);
+			mips_cp0_corembox_write(msg, 0);
 		} else {
-			MTC0(msg, CP0_CORE_MBOX, 1);
+			mips_cp0_corembox_write(msg, 1);
 		}
 	}
 	mutex_exit(&ingenic_ipi_lock);
@@ -350,5 +351,5 @@ ingenic_reset(void)
 	writereg(JZ_WDOG_TCNT, 0);	/* reset counter */
 	writereg(JZ_WDOG_TDR, 128);	/* wait for ~1s */
 	writereg(JZ_WDOG_TCSR, TCSR_RTC_EN | TCSR_DIV_256);
-	writereg(JZ_WDOG_TCER, TCER_ENABLE);	/* fire! */	
+	writereg(JZ_WDOG_TCER, TCER_ENABLE);	/* fire! */
 }

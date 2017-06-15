@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_ip.c,v 1.162 2017/01/24 07:09:24 ozaki-r Exp $	*/
+/*	$NetBSD: raw_ip.c,v 1.164 2017/04/20 08:46:07 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.162 2017/01/24 07:09:24 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.164 2017/04/20 08:46:07 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -213,7 +213,7 @@ rip_input(struct mbuf *m, ...)
 #if defined(IPSEC)
 		/* check AH/ESP integrity. */
 		else if (ipsec_used &&
-		    ipsec4_in_reject_so(m, last->inp_socket)) {
+		    ipsec4_in_reject(m, last)) {
 			IPSEC_STATINC(IPSEC_STAT_IN_POLVIO);
 			/* do not inject data to pcb */
 		}
@@ -228,7 +228,7 @@ rip_input(struct mbuf *m, ...)
 #if defined(IPSEC)
 	/* check AH/ESP integrity. */
 	if (ipsec_used && last != NULL
-	    && ipsec4_in_reject_so(m, last->inp_socket)) {
+	    && ipsec4_in_reject(m, last)) {
 		m_freem(m);
 		IPSEC_STATINC(IPSEC_STAT_IN_POLVIO);
 		IP_STATDEC(IP_STAT_DELIVERED);
@@ -383,7 +383,7 @@ rip_output(struct mbuf *m, struct inpcb *inp)
 	 * will be stored in inp_errormtu.
 	 */
 	return ip_output(m, opts, &inp->inp_route, flags, inp->inp_moptions,
-	     inp->inp_socket);
+	     inp);
 }
 
 /*

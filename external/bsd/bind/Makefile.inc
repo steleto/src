@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.24 2016/11/01 21:56:11 christos Exp $
+#	$NetBSD: Makefile.inc,v 1.26 2017/05/21 15:28:38 riastradh Exp $
 
 .if !defined(BIND9_MAKEFILE_INC)
 BIND9_MAKEFILE_INC=yes
@@ -13,11 +13,7 @@ CWARNFLAGS.clang+=	-Wno-unused-value -Wno-parentheses
 
 .include <bsd.own.mk>
 
-.if ${MKCRYPTO} == "no"
-NAMED_USE_OPENSSL?=no
-.else
 NAMED_USE_OPENSSL?=yes
-.endif
 
 .if exists(${NETBSDSRCDIR}/sys/sys/atomic.h)
 NAMED_USE_PTHREADS?=yes
@@ -98,9 +94,9 @@ CPPFLAGS+=-DGSSAPI
 .if ${MKKERBEROS} != "no"
 .if !defined (LIB) || empty(LIB)
 LDADD+= -lgssapi -lheimntlm -lkrb5 -lhx509 -lheimbase \
-	-lcom_err  -lroken -lasn1 -lwind
+	-lcom_err  -lroken -lasn1 -lwind -lsqlite3
 DPADD+= ${LIBGSSAPI} ${LIBKRB5} ${LIBHX509} ${LIBHEIMNTLM} ${LIBHEIMBASE} \
-	${LIBCOM_ERR} ${LIBROKEN} ${LIBASN1} ${LIBWIND}
+	${LIBCOM_ERR} ${LIBROKEN} ${LIBASN1} ${LIBWIND} ${LIBSQLITE3}
 .else
 .for L in gssapi krb5 hx509 heimntlm heimbase com_err roken asn1 wind
 LIBDPLIBS+=	$L ${NETBSDSRCDIR}/crypto/external/bsd/heimdal/lib/lib$L

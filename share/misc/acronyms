@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.251 2017/01/18 17:29:52 riastradh Exp $
+$NetBSD: acronyms,v 1.255 2017/06/14 20:56:33 dholland Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -32,6 +32,7 @@ AIU	as I understand
 AIUI	as I understand it
 AKA	also known as
 AM	ante meridiem
+AMA	ask me anything
 AMOL	a mountain of love
 ASAIC	as soon as I can
 ASAP	as soon as possible
@@ -238,6 +239,7 @@ ILY	I love you
 IMAO	in my arrogant opinion
 IMBO	in my biased opinion
 IMCO	in my considered opinion
+IME	in my experience
 IMHO	in my humble opinion
 IMNSHO	in my not so humble opinion
 IMO	in my opinion
@@ -327,6 +329,7 @@ MYOB	mind your own business
 N/A	not {applicable,available}
 N/M	never mind
 NAFAIK	not as far as I know
+NB	nota bene
 NBD	no big deal
 NE1	anyone
 NEDM	not even Doom music
@@ -414,6 +417,8 @@ PPL	people
 PPL	pretty please
 PPP	petty pet peeve
 PR	public relations
+PSA 	prostate-specific antigen
+PSA 	public service announcement
 PTA	parent-teacher association
 PTO	{paid,personal} time off
 PTO	parent-teacher organization

@@ -1,4 +1,4 @@
-/*	$NetBSD: route.c,v 1.188 2017/01/19 06:58:55 ozaki-r Exp $	*/
+/*	$NetBSD: route.c,v 1.194 2017/03/24 03:45:02 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.188 2017/01/19 06:58:55 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.194 2017/03/24 03:45:02 ozaki-r Exp $");
 
 #include <sys/param.h>
 #ifdef RTFLUSH_DEBUG
@@ -918,15 +918,27 @@ rtredirect(const struct sockaddr *dst, const struct sockaddr *gateway,
 			 * Smash the current notion of the gateway to
 			 * this destination.  Should check about netmask!!!
 			 */
-			/*
-			 * FIXME NOMPSAFE: the rtentry is updated with the existence
-			 * of refeferences of it.
-			 */
-			error = rt_setgate(rt, gateway);
+#ifdef NET_MPSAFE
+			KASSERT(!cpu_softintr_p());
+
+			error = rt_update_prepare(rt);
 			if (error == 0) {
-				rt->rt_flags |= RTF_MODIFIED;
-				flags |= RTF_MODIFIED;
+#endif
+				error = rt_setgate(rt, gateway);
+				if (error == 0) {
+					rt->rt_flags |= RTF_MODIFIED;
+					flags |= RTF_MODIFIED;
+				}
+#ifdef NET_MPSAFE
+				rt_update_finish(rt);
+			} else {
+				/*
+				 * If error != 0, the rtentry is being
+				 * destroyed, so doing nothing doesn't
+				 * matter.
+				 */
 			}
+#endif
 			stat = &rtstat.rts_newgateway;
 		}
 	} else
@@ -1012,9 +1024,17 @@ ifa_ifwithroute_psref(int flags, const struct sockaddr *dst,
 		int s;
 		struct rtentry *rt;
 
-		rt = rtalloc1(dst, 0);
+		/* XXX we cannot call rtalloc1 if holding the rt lock */
+		if (RT_LOCKED())
+			rt = rtalloc1_locked(gateway, 0, true);
+		else
+			rt = rtalloc1(gateway, 0);
 		if (rt == NULL)
 			return NULL;
+		if (rt->rt_flags & RTF_GATEWAY) {
+			rt_unref(rt);
+			return NULL;
+		}
 		/*
 		 * Just in case. May not need to do this workaround.
 		 * Revisit when working on rtentry MP-ification.
@@ -1147,7 +1167,7 @@ rt_getifa(struct rt_addrinfo *info, struct psref *psref)
 		return NULL;
 got:
 	if (ifa->ifa_getifa != NULL) {
-		/* FIXME NOMPSAFE */
+		/* FIXME ifa_getifa is NOMPSAFE */
 		ifa = (*ifa->ifa_getifa)(ifa, dst);
 		if (ifa == NULL)
 			return NULL;
@@ -1170,7 +1190,7 @@ rtrequest1(int req, struct rt_addrinfo *info, struct rtentry **ret_nrt)
 	int error = 0, rc;
 	struct rtentry *rt;
 	rtbl_t *rtbl;
-	struct ifaddr *ifa = NULL, *ifa2 = NULL;
+	struct ifaddr *ifa = NULL;
 	struct sockaddr_storage maskeddst;
 	const struct sockaddr *dst = info->rti_info[RTAX_DST];
 	const struct sockaddr *gateway = info->rti_info[RTAX_GATEWAY];
@@ -1276,6 +1296,7 @@ rtrequest1(int req, struct rt_addrinfo *info, struct rtentry **ret_nrt)
 
 		ss = pserialize_read_enter();
 		if (info->rti_info[RTAX_IFP] != NULL) {
+			struct ifaddr *ifa2;
 			ifa2 = ifa_ifwithnet(info->rti_info[RTAX_IFP]);
 			if (ifa2 != NULL)
 				rt->rt_ifp = ifa2->ifa_ifp;
@@ -1496,10 +1517,6 @@ rtinit(struct ifaddr *ifa, int cmd, int flags)
 		break;
 	case RTM_ADD:
 		/*
-		 * FIXME NOMPSAFE: the rtentry is updated with the existence
-		 * of refeferences of it.
-		 */
-		/*
 		 * XXX it looks just reverting rt_ifa replaced by ifa_rtrequest
 		 * called via rtrequest1. Can we just prevent the replacement
 		 * somehow and remove the following code? And also doesn't
@@ -1508,14 +1525,30 @@ rtinit(struct ifaddr *ifa, int cmd, int flags)
 		if (rt->rt_ifa != ifa) {
 			printf("rtinit: wrong ifa (%p) was (%p)\n", ifa,
 				rt->rt_ifa);
-			if (rt->rt_ifa->ifa_rtrequest != NULL) {
-				rt->rt_ifa->ifa_rtrequest(RTM_DELETE, rt,
-				    &info);
+#ifdef NET_MPSAFE
+			KASSERT(!cpu_softintr_p());
+
+			error = rt_update_prepare(rt);
+			if (error == 0) {
+#endif
+				if (rt->rt_ifa->ifa_rtrequest != NULL) {
+					rt->rt_ifa->ifa_rtrequest(RTM_DELETE,
+					    rt, &info);
+				}
+				rt_replace_ifa(rt, ifa);
+				rt->rt_ifp = ifa->ifa_ifp;
+				if (ifa->ifa_rtrequest != NULL)
+					ifa->ifa_rtrequest(RTM_ADD, rt, &info);
+#ifdef NET_MPSAFE
+				rt_update_finish(rt);
+			} else {
+				/*
+				 * If error != 0, the rtentry is being
+				 * destroyed, so doing nothing doesn't
+				 * matter.
+				 */
 			}
-			rt_replace_ifa(rt, ifa);
-			rt->rt_ifp = ifa->ifa_ifp;
-			if (ifa->ifa_rtrequest != NULL)
-				ifa->ifa_rtrequest(RTM_ADD, rt, &info);
+#endif
 		}
 		rt_newmsg(cmd, rt);
 		rt_unref(rt);

@@ -12,24 +12,23 @@
  * LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
  * FOR A PARTICULAR PURPOSE.
  *
- * support for the IEEE MPCP protocol as per 802.3ah
- *
  * Original code by Hannes Gredler (hannes@juniper.net)
  */
 
+/* \summary: IEEE 802.3ah Multi-Point Control Protocol (MPCP) printer */
+
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: print-mpcp.c,v 1.5 2015/03/31 21:59:35 christos Exp $");
+__RCSID("$NetBSD: print-mpcp.c,v 1.7 2017/02/05 04:05:05 spz Exp $");
 #endif
 
-#define NETDISSECT_REWORKED
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
-#include <tcpdump-stdinc.h>
+#include <netdissect-stdinc.h>
 
-#include "interface.h"
+#include "netdissect.h"
 #include "extract.h"
 
 #define MPCP_TIMESTAMP_LEN        4

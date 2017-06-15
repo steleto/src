@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wmreg.h,v 1.95 2017/01/16 00:09:06 knakahara Exp $	*/
+/*	$NetBSD: if_wmreg.h,v 1.98 2017/02/28 09:55:47 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -127,21 +127,21 @@ typedef struct wiseman_rxdesc {
 
 /* extended RX descriptor for 82574 */
 typedef union ext_rxdesc {
-        struct {
-                uint64_t erxd_addr;	/* Packet Buffer Address */
-                uint64_t erxd_dd;	/* 63:1 reserved, 0 DD */
-        } erx_data;
-        struct {
-                uint32_t erxc_mrq;	/*
-                                         * 31:13 reserved
-                                         * 12:8 Rx queue associated with the packet
-                                         * 7:4 reserved 3:0 RSS Type
-                                         */
-                uint32_t erxc_rsshash;	/* RSS Hash or {Fragment Checksum, IP identification } */
-                uint32_t erxc_err_stat;	/* 31:20 Extended Error, 19:0 Extened Status */
-                uint16_t erxc_pktlen;	/* PKT_LEN */
-                uint16_t erxc_vlan;	/* VLAN Tag */
-        } erx_ctx;
+	struct {
+		uint64_t erxd_addr;	/* Packet Buffer Address */
+		uint64_t erxd_dd;	/* 63:1 reserved, 0 DD */
+	} erx_data;
+	struct {
+		uint32_t erxc_mrq;	/*
+					 * 31:13 reserved
+					 * 12:8 Rx queue associated with the packet
+					 * 7:4 reserved 3:0 RSS Type
+					 */
+		uint32_t erxc_rsshash;	/* RSS Hash or {Fragment Checksum, IP identification } */
+		uint32_t erxc_err_stat;	/* 31:20 Extended Error, 19:0 Extened Status */
+		uint16_t erxc_pktlen;	/* PKT_LEN */
+		uint16_t erxc_vlan;	/* VLAN Tag */
+	} erx_ctx;
 } __packed ext_rxdesc_t;
 
 #define EXTRXD_DD_MASK		__BIT(0)
@@ -210,21 +210,21 @@ typedef union ext_rxdesc {
 
 /* advanced RX descriptor for 82575 and newer */
 typedef union nq_rxdesc {
-        struct {
-                uint64_t nrxd_paddr;	/* 63:1 Packet Buffer Address, 0 A0/NSE */
-                uint64_t nrxd_haddr;	/* 63:1 HEader Buffer Address, 0 DD */
-        } nqrx_data;
-        struct {
-                uint32_t nrxc_misc;	/*
-                                         * 31: SPH, 30:21 HDR_LEN[9:0],
-                                         * 20:19 HDR_LEN[11:10], 18:17 RSV,
-                                         * 16:4 Packet Type 3:0 RSS Type
-                                         */
-                uint32_t nrxc_rsshash;	/* RSS Hash or {Fragment Checksum, IP identification } */
-                uint32_t nrxc_err_stat;	/* 31:20 Extended Error, 19:0 Extened Status */
-                uint16_t nrxc_pktlen;	/* PKT_LEN */
-                uint16_t nrxc_vlan;	/* VLAN Tag */
-        } nqrx_ctx;
+	struct {
+		uint64_t nrxd_paddr;	/* 63:1 Packet Buffer Address, 0 A0/NSE */
+		uint64_t nrxd_haddr;	/* 63:1 HEader Buffer Address, 0 DD */
+	} nqrx_data;
+	struct {
+		uint32_t nrxc_misc;	/*
+					 * 31: SPH, 30:21 HDR_LEN[9:0],
+					 * 20:19 HDR_LEN[11:10], 18:17 RSV,
+					 * 16:4 Packet Type 3:0 RSS Type
+					 */
+		uint32_t nrxc_rsshash;	/* RSS Hash or {Fragment Checksum, IP identification } */
+		uint32_t nrxc_err_stat;	/* 31:20 Extended Error, 19:0 Extened Status */
+		uint16_t nrxc_pktlen;	/* PKT_LEN */
+		uint16_t nrxc_vlan;	/* VLAN Tag */
+	} nqrx_ctx;
 } __packed nq_rxdesc_t;
 
 /* for nrxd_paddr macros */
@@ -1051,7 +1051,12 @@ struct livengood_tcpip_ctxdesc {
 #define EITR_OTHER	0x80000000 /* Interrupt Cause Active */
 
 #define WMREG_EITR(x)	(0x01680 + (0x4 * (x)))
-#define EITR_ITR_INT_MASK	0x0000ffff
+#define EITR_ITR_INT_MASK	__BITS(14,2)
+#define EITR_COUNTER_MASK_82575	__BITS(31,16)
+#define EITR_CNT_INGR		__BIT(31) /* does not overwrite counter */
+
+#define WMREG_EITR_82574(x)	(0x000E8 + (0x4 * (x)))
+#define EITR_ITR_INT_MASK_82574	__BITS(15, 0)
 
 #define	WMREG_RXPBS	0x2404	/* Rx Packet Buffer Size  */
 #define RXPBS_SIZE_MASK_82576	0x0000007F
@@ -1161,7 +1166,7 @@ struct livengood_tcpip_ctxdesc {
 #define	WUC_APME		0x00000001 /* APM Enable */
 #define	WUC_PME_EN		0x00000002 /* PME Enable */
 
-#define	WMREG_WUFC	0x5808	/* Wakeup Filter COntrol */
+#define	WMREG_WUFC	0x5808	/* Wakeup Filter Control */
 #define WUFC_MAG		0x00000002 /* Magic Packet Wakeup Enable */
 #define WUFC_EX			0x00000004 /* Directed Exact Wakeup Enable */
 #define WUFC_MC			0x00000008 /* Directed Multicast Wakeup En */

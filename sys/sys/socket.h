@@ -1,4 +1,4 @@
-/*	$NetBSD: socket.h,v 1.120 2016/09/21 10:50:23 roy Exp $	*/
+/*	$NetBSD: socket.h,v 1.122 2017/05/27 21:02:56 bouyer Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -221,7 +221,8 @@ struct	accept_filter_arg {
 #define	AF_IEEE80211	32		/* IEEE80211 */
 #define	AF_MPLS		33		/* MultiProtocol Label Switching */
 #define	AF_ROUTE	34		/* Internal Routing Protocol */
-#define	AF_MAX		35
+#define	AF_CAN		35
+#define	AF_MAX		36
 
 /*
  * Structure used by kernel to store most
@@ -330,6 +331,7 @@ struct sockaddr_storage {
 #define PF_BLUETOOTH	AF_BLUETOOTH
 #define	PF_MPLS		AF_MPLS
 #define	PF_ROUTE	AF_ROUTE
+#define	PF_CAN		AF_CAN
 
 #define	PF_MAX		AF_MAX
 
@@ -644,6 +646,7 @@ __END_DECLS
 
 __BEGIN_DECLS
 int	accept(int, struct sockaddr * __restrict, socklen_t * __restrict);
+int	accept4(int, struct sockaddr * __restrict, socklen_t * __restrict, int);
 int	bind(int, const struct sockaddr *, socklen_t);
 int	connect(int, const struct sockaddr *, socklen_t);
 int	getpeername(int, struct sockaddr * __restrict, socklen_t * __restrict);

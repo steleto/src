@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.bootimage,v 1.1 2017/01/24 11:16:50 nonaka Exp $
+#	$NetBSD: Makefile.bootimage,v 1.6 2017/02/16 03:47:23 christos Exp $
 #
 # Copyright (c) 2009, 2010, 2011 Izumi Tsutsui.  All rights reserved.
 #
@@ -136,8 +136,10 @@
 
 .include "${NETBSDSRCDIR}/distrib/common/Makefile.distrib"
 
-.if ${MKREPRO:Uno} == "yes"
-TIMESTAMP=-T ${NETBSDSRCDIR}/sys/sys/param.h
+.if ${MKREPRO_TIMESTAMP:Uno} != "no"
+MAKEFS_TIMESTAMP=-T "${MKREPRO_TIMESTAMP}"
+GPT_TIMESTAMP=-T "${MKREPRO_TIMESTAMP}"
+PAX_TIMESTAMP=--timestamp "${MKREPRO_TIMESTAMP}"
 .endif
 
 .if empty(IMGBASE)
@@ -149,7 +151,6 @@ TIMESTAMP=-T ${NETBSDSRCDIR}/sys/sys/param.h
 # should be defined elsewhere? 
 CAT?=		cat
 CHMOD?=		chmod
-CP?=		cp
 DD?=		dd
 MKDIR?=		mkdir -p
 RM?=		rm
@@ -214,8 +215,8 @@ BSDPARTSECTORS!= expr ${IMAGESECTORS} - ${LABELSECTORS} - ${EFISECTORS} - 2048
 FSOFFSET!=	expr ${LABELSECTORS} + ${EFISECTORS}
 SWAPOFFSET!=	expr ${LABELSECTORS} + ${FSSECTORS} + ${EFISECTORS}
 
-BOOTDISK_UUID=`${TOOL_GPT} ${WORKMBR} show -i 2 | awk '/^GUID/ {print $$2}'`
-SWAPDISK_UUID=`${TOOL_GPT} ${WORKMBR} show -i 3 | awk '/^GUID/ {print $$2}'`
+BOOTDISK_UUID=`${TOOL_GPT} ${GPT_TIMESSTAMP} ${WORKMBR} show -i 2 | awk '/^GUID/ {print $$2}'`
+SWAPDISK_UUID=`${TOOL_GPT} ${GPT_TIMESSTAMP} ${WORKMBR} show -i 3 | awk '/^GUID/ {print $$2}'`
 .endif
 
 #
@@ -254,18 +255,18 @@ ${TARGETFS}: prepare_md_post pre-targetfs
 		echo "Missing ${RELEASEDIR}/${RELEASEMACHINEDIR}, aborting"; \
 		false; 							\
 	fi;
-	@${MKDIR} ${WORKDIR}
+	@${MKDIR} ${MKDIRPERM} ${WORKDIR}
 .for set in ${IMG_SETS}
 	@if [ ! -f ${SETS_DIR}/${set}.tgz ]; then 			\
 		echo "Missing ${SETS_DIR}/${set}.tgz, aborting";	\
 		false; 							\
 	fi
 	@echo Extracting ${set}.tgz ...
-	@(cd ${WORKDIR}; ${TOOL_PAX} -rnz -f ${SETS_DIR}/${set}.tgz .)
+	@(cd ${WORKDIR}; ${TOOL_PAX} ${PAX_TIMESTAMP} -rnz -f ${SETS_DIR}/${set}.tgz .)
 .endfor
 .if defined(SECONDARY_BOOT)
 	@echo Copying secondary boot...
-	${CP} -f ${WORKDIR}/usr/mdec/${SECONDARY_BOOT} ${WORKDIR}
+	${INSTALL} ${COPY} -m 0444 ${WORKDIR}/usr/mdec/${SECONDARY_BOOT} ${WORKDIR}
 .endif
 	@echo Preparing /etc/fstab ...
 .if ${USE_GPT} != "no"
@@ -290,11 +291,11 @@ ${TARGETFS}: prepare_md_post pre-targetfs
 	    < ${FSTAB_IN} > ${WORKFSTAB}
 .endif
 .endif	# USE_GPT != "no"
-	${CP} ${WORKFSTAB} ${WORKDIR}/etc/fstab
+	${INSTALL} ${COPY} -m 0644 ${WORKFSTAB} ${WORKDIR}/etc/fstab
 	@echo Setting rc_configured=YES in /etc/rc.conf ...
 	${TOOL_SED} "s/rc_configured=NO/rc_configured=YES/"		\
 	    < ${WORKDIR}/etc/rc.conf > ${WORKRCCONF}
-	${CP} ${WORKRCCONF} ${WORKDIR}/etc/rc.conf
+	${INSTALL} ${COPY} -m 0644 ${WORKRCCONF} ${WORKDIR}/etc/rc.conf
 .if defined(IMGDIR_EXTRA)
 	@echo Copying extra dirs...
 .for _SRCDIR _TARGET in ${IMGDIR_EXTRA}
@@ -302,9 +303,9 @@ ${TARGETFS}: prepare_md_post pre-targetfs
 		echo "${_SRCDIR} is not directory, aborting";		\
 		false; 							\
 	fi
-	${MKDIR} ${WORKDIR}/${_TARGET}
+	${MKDIR} ${MKDIRPERM} ${WORKDIR}/${_TARGET}
 	(cd ${_SRCDIR} ;						\
-	    ${TOOL_PAX} -rw -pe	-v					\
+	    ${TOOL_PAX} ${PAX_TIMESTAMP} -rw -pe -v			\
 	    ${IMGDIR_EXCLUDE}						\
 	    . ${.OBJDIR}/${WORKDIR}/${_TARGET} )
 .endfor
@@ -317,8 +318,8 @@ ${TARGETFS}: prepare_md_post pre-targetfs
 		false; 							\
 	fi
 	@if [ -f ${_SRC} ]; then 					\
-		echo ${CP} ${_SRC} ${WORKDIR}/${_TARGET};		\
-		${CP} ${_SRC} ${WORKDIR}/${_TARGET};			\
+		echo ${INSTALL} ${COPY} -m 0644 ${_SRC} ${WORKDIR}/${_TARGET}; \
+		${INSTALL} ${COPY} -m 0644 ${_SRC} ${WORKDIR}/${_TARGET}; \
 	fi
 .endfor
 .endif
@@ -342,7 +343,7 @@ ${TARGETFS}: prepare_md_post pre-targetfs
 	${TOOL_MAKEFS} -M ${FSSIZE} -m ${FSSIZE}			\
 	    -B ${TARGET_ENDIANNESS}					\
 	    -F ${WORKSPEC} -N ${WORKDIR}/etc				\
-	    ${TIMESTAMP}						\
+	    ${MAKEFS_TIMESTAMP}						\
 	    ${IMGMAKEFSOPTIONS}						\
 	    ${WORKFS} ${WORKDIR}
 .if !empty(PRIMARY_BOOT) && ${INSTALLBOOT_AFTER_DISKLABEL} == "no"
@@ -397,25 +398,25 @@ pre-targetfs:
 	@echo creating GPT header and partition entries...
 	${RM} -f ${WORKMBR}
 	${DD} if=/dev/zero of=${WORKMBR} seek=$$((${IMAGESECTORS} - 1)) count=1
-	${TOOL_GPT} ${WORKMBR} create
-	${TOOL_GPT} ${WORKMBR} add -a 1m -s ${EFISECTORS} -t efi -l "EFI system"
-	${TOOL_GPT} ${WORKMBR} add -a 1m -s ${FSSECTORS} -t ffs
+	${TOOL_GPT} ${GPT_TIMESSTAMP} ${WORKMBR} create
+	${TOOL_GPT} ${GPT_TIMESSTAMP} ${WORKMBR} add -a 1m -s ${EFISECTORS} -t efi -l "EFI system"
+	${TOOL_GPT} ${GPT_TIMESSTAMP} ${WORKMBR} add -a 1m -s ${FSSECTORS} -t ffs
 .if ${OMIT_SWAPIMG} == "no"
-	${TOOL_GPT} ${WORKMBR} add -a 1m -s ${SWAPSECTORS} -t swap
+	${TOOL_GPT} ${GPT_TIMESSTAMP} ${WORKMBR} add -a 1m -s ${SWAPSECTORS} -t swap
 .endif
 
 ${IMGBASE}.img:	${TARGETFS}
 	@echo create EFI system partition...
-	@${MKDIR} ${EFIWORKDIR}/EFI/boot
+	@${MKDIR} ${MKDIRPERM} ${EFIWORKDIR}/EFI/boot
 .if !empty(EFIBOOT)
 .for f in ${EFIBOOT}
-	${CP} -f ${f} ${EFIWORKDIR}/EFI/boot/`basename ${f}`
+	${INSTALL} ${COPY} -m 0644 ${f} ${EFIWORKDIR}/EFI/boot/`basename ${f}`
 .endfor
 .endif
 	${RM} -f ${WORKEFI}
 	${TOOL_MAKEFS} -M ${EFIMB}m -m ${EFIMB}m			\
 	    -B ${TARGET_ENDIANNESS}					\
-	    ${TIMESTAMP}						\
+	    ${MAKEFS_TIMESTAMP}						\
 	    -t msdos -o F=32,c=1					\
 	    ${WORKEFI} ${EFIWORKDIR}
 	@echo create GPT image...
@@ -423,9 +424,9 @@ ${IMGBASE}.img:	${TARGETFS}
 	    count=2048
 	${DD} if=${WORKMBR} count=${LABELSECTORS} |			\
 	    ${CAT} - ${WORKEFI} ${TARGETFS} ${WORKGPT} > ${WORKIMG}
-	${TOOL_GPT} ${WORKIMG} biosboot -i 2				\
+	${TOOL_GPT} ${GPT_TIMESSTAMP} ${WORKIMG} biosboot -i 2				\
 	    -c ${.OBJDIR}/${WORKDIR}/usr/mdec/gptmbr.bin
-	${TOOL_GPT} ${WORKIMG} set -a bootme -i 2
+	${TOOL_GPT} ${GPT_TIMESSTAMP} ${WORKIMG} set -a bootme -i 2
 .else	# USE_GPT == "no"
 ${IMGBASE}.img:	${TARGETFS} ${WORKLABEL}
 .if ${USE_MBR} != "no"
@@ -455,7 +456,7 @@ ${IMGBASE}.img:	${TARGETFS} ${WORKLABEL}
 	${DD} if=${WORKMBR} count=${LABELSECTORS} |			\
 	    ${CAT} - ${TARGETFS} > ${WORKIMG}
 .else	# USE_MBR == "no"
-	${CP} ${TARGETFS} ${WORKIMG}
+	${INSTALL} ${COPY} -m 0644 ${TARGETFS} ${WORKIMG}
 .endif	# USE_MBR != "no"
 .endif	# USE_GPT != "no"
 .if ${OMIT_SWAPIMG} == "no"

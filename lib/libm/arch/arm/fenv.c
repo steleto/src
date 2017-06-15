@@ -28,7 +28,9 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: fenv.c,v 1.6 2014/12/29 19:11:13 martin Exp $");
+__RCSID("$NetBSD: fenv.c,v 1.9 2017/05/08 09:25:03 martin Exp $");
+
+#include "namespace.h"
 
 #include <sys/types.h>
 #include <assert.h>
@@ -38,13 +40,27 @@ __RCSID("$NetBSD: fenv.c,v 1.6 2014/12/29 19:11:13 martin Exp $");
 #include <inttypes.h>
 
 #ifdef __SOFTFP__
-#include <ieeefp.h>
-#include <sys/signal.h>
-#include <sys/siginfo.h>
-#else
-#include <arm/armreg.h>
+#error This fenv implementation is only for hardfloat.
 #endif
 
+#ifdef __weak_alias
+__weak_alias(feclearexcept,_feclearexcept)
+__weak_alias(fedisableexcept,_fedisableexcept)
+__weak_alias(feenableexcept,_feenableexcept)
+__weak_alias(fegetenv,_fegetenv)
+__weak_alias(fegetexcept,_fegetexcept)
+__weak_alias(fegetexceptflag,_fegetexceptflag)
+__weak_alias(fegetround,_fegetround)
+__weak_alias(feholdexcept,_feholdexcept)
+__weak_alias(feraiseexcept,_feraiseexcept)
+__weak_alias(fesetenv,_fesetenv)
+__weak_alias(fesetexceptflag,_fesetexceptflag)
+__weak_alias(fesetround,_fesetround)
+__weak_alias(fetestexcept,_fetestexcept)
+__weak_alias(feupdateenv,_feupdateenv)
+#endif
+
+#include <arm/armreg.h>
 #include <arm/vfpreg.h>
 
 const fenv_t __fe_dfl_env = VFP_FPSCR_FZ|VFP_FPSCR_DN|VFP_FPSCR_RN;
@@ -59,14 +75,9 @@ feclearexcept(int excepts)
 #ifndef lint
 	_DIAGASSERT((except & ~FE_ALL_EXCEPT) == 0);
 #endif
-#ifdef __SOFTFP__
-	fpsetsticky(fpgetsticky() & ~excepts);
-	return 0;
-#else
 	int tmp = armreg_fpscr_read() & ~__SHIFTIN(excepts, VFP_FPSCR_CSUM);
 	armreg_fpscr_write(tmp);
 	return 0;
-#endif
 }
 
 /*
@@ -78,12 +89,9 @@ feclearexcept(int excepts)
 int
 fegetexceptflag(fexcept_t *flagp, int excepts)
 {
+
 	_DIAGASSERT((except & ~FE_ALL_EXCEPT) == 0);
-#ifdef __SOFTFP__
-	*flagp = fpgetsticky() & excepts;
-#else
 	*flagp = __SHIFTOUT(armreg_fpscr_read(), VFP_FPSCR_CSUM) & excepts;
-#endif
 	return 0;
 }
 
@@ -98,32 +106,9 @@ feraiseexcept(int excepts)
 #ifndef lint
 	_DIAGASSERT((except & ~FE_ALL_EXCEPT) == 0);
 #endif
-#ifdef __SOFTFP__
-	excepts &= fpgetsticky();
-
-	if (excepts) {
-		siginfo_t info;
-		memset(&info, 0, sizeof info);
-		info.si_signo = SIGFPE;
-		info.si_pid = getpid();
-		info.si_uid = geteuid();
-		if (excepts & FE_UNDERFLOW)
-			info.si_code = FPE_FLTUND;
-		else if (excepts & FE_OVERFLOW)
-			info.si_code = FPE_FLTOVF;
-		else if (excepts & FE_DIVBYZERO)
-			info.si_code = FPE_FLTDIV;
-		else if (excepts & FE_INVALID)
-			info.si_code = FPE_FLTINV;
-		else if (excepts & FE_INEXACT)
-			info.si_code = FPE_FLTRES;
-		sigqueueinfo(getpid(), &info);
-	}
-#else
 	int fpscr = armreg_fpscr_read();
-	fpscr = (fpscr & ~VFP_FPSCR_ESUM) | __SHIFTIN(excepts, VFP_FPSCR_ESUM);
+	fpscr |= __SHIFTIN(excepts, VFP_FPSCR_CSUM);
 	armreg_fpscr_write(fpscr);
-#endif
 	return 0;
 }
 
@@ -142,14 +127,10 @@ fesetexceptflag(const fexcept_t *flagp, int excepts)
 #ifndef lint
 	_DIAGASSERT((except & ~FE_ALL_EXCEPT) == 0);
 #endif
-#ifdef __SOFTFP__
-	fpsetsticky((fpgetsticky() & ~excepts) | (excepts & *flagp));
-#else
 	int fpscr = armreg_fpscr_read();
 	fpscr &= ~__SHIFTIN(excepts, VFP_FPSCR_CSUM);
 	fpscr |= __SHIFTIN((*flagp & excepts), VFP_FPSCR_CSUM);
 	armreg_fpscr_write(fpscr);
-#endif
 	return 0;
 }
 
@@ -159,15 +140,9 @@ feenableexcept(int excepts)
 #ifndef lint
 	_DIAGASSERT((except & ~FE_ALL_EXCEPT) == 0);
 #endif
-#ifdef __SOFTFP__
-	int old = fpgetmask();
-	fpsetmask(old | excepts);
-	return old;
-#else
 	int fpscr = armreg_fpscr_read();
 	armreg_fpscr_write(fpscr | __SHIFTIN((excepts), VFP_FPSCR_ESUM));
 	return __SHIFTOUT(fpscr, VFP_FPSCR_ESUM) & FE_ALL_EXCEPT;
-#endif
 }
 
 int
@@ -176,15 +151,9 @@ fedisableexcept(int excepts)
 #ifndef lint
 	_DIAGASSERT((except & ~FE_ALL_EXCEPT) == 0);
 #endif
-#ifdef __SOFTFP__
-	int old = fpgetmask();
-	fpsetmask(old & ~excepts);
-	return old;
-#else
 	int fpscr = armreg_fpscr_read();
 	armreg_fpscr_write(fpscr & ~__SHIFTIN((excepts), VFP_FPSCR_ESUM));
 	return __SHIFTOUT(fpscr, VFP_FPSCR_ESUM) & FE_ALL_EXCEPT;
-#endif
 }
 
 /*
@@ -196,21 +165,13 @@ int
 fetestexcept(int excepts)
 {
 	_DIAGASSERT((except & ~FE_ALL_EXCEPT) == 0);
-#ifdef __SOFTFP__
-	return fpgetsticky() & excepts;
-#else
 	return __SHIFTOUT(armreg_fpscr_read(), VFP_FPSCR_CSUM) & excepts;
-#endif
 }
 
 int     
 fegetexcept(void)
 {
-#ifdef __SOFTFP__
-	return fpgetmask();
-#else
 	return __SHIFTOUT(armreg_fpscr_read(), VFP_FPSCR_ESUM);
-#endif
 }
 
 /*
@@ -219,11 +180,7 @@ fegetexcept(void)
 int
 fegetround(void)
 {
-#ifdef __SOFTFP__
-	return fpgetround();
-#else
 	return __SHIFTOUT(armreg_fpscr_read(), VFP_FPSCR_RMODE);
-#endif
 }
 
 /*
@@ -237,13 +194,9 @@ fesetround(int round)
 #ifndef lint
 	_DIAGASSERT(!(round & ~__SHIFTOUT(VFP_FPSCR_RMODE, VFP_FPSCR_RMODE)));
 #endif
-#ifdef __SOFTFP__
-	(void)fpsetround(round);
-#else
 	int fpscr = armreg_fpscr_read() & ~VFP_FPSCR_RMODE;
 	fpscr |= __SHIFTIN(round, VFP_FPSCR_RMODE);
 	armreg_fpscr_write(fpscr);
-#endif
 	return 0;
 }
 
@@ -254,13 +207,8 @@ fesetround(int round)
 int
 fegetenv(fenv_t *envp)
 {
-#ifdef __SOFTFP__
-	*envp = __SHIFTIN(fpgetround(), VFP_FPSCR_RMODE)
-	    | __SHIFTIN(fpgetmask(), VFP_FPSCR_ESUM)
-	    | __SHIFTIN(fpgetsticky(), VFP_FPSCR_CSUM);
-#else
+
 	*envp = armreg_fpscr_read();
-#endif
 	return 0;
 }
 
@@ -273,16 +221,9 @@ fegetenv(fenv_t *envp)
 int
 feholdexcept(fenv_t *envp)
 {
-#ifdef __SOFTFP__
-	*envp = __SHIFTIN(fpgetround(), VFP_FPSCR_RMODE)
-	    | __SHIFTIN(fpgetmask(), VFP_FPSCR_ESUM)
-	    | __SHIFTIN(fpgetsticky(), VFP_FPSCR_CSUM);
-	fpsetmask(0);
-	fpsetsticky(0);
-#else
+
 	*envp = armreg_fpscr_read();
 	armreg_fpscr_write((*envp) & ~(VFP_FPSCR_ESUM|VFP_FPSCR_CSUM));
-#endif
 	return 0;
 }
 
@@ -295,13 +236,8 @@ feholdexcept(fenv_t *envp)
 int
 fesetenv(const fenv_t *envp)
 {
-#ifdef __SOFTFP__
-	(void)fpsetround(__SHIFTIN(*envp, VFP_FPSCR_RMODE));
-	(void)fpsetmask(__SHIFTOUT(*envp, VFP_FPSCR_ESUM));
-	(void)fpsetsticky(__SHIFTOUT(*envp, VFP_FPSCR_CSUM));
-#else
+
 	armreg_fpscr_write(*envp);
-#endif
 	return 0;
 }
 
@@ -317,15 +253,10 @@ feupdateenv(const fenv_t *envp)
 #ifndef lint
 	_DIAGASSERT(envp != NULL);
 #endif
-#ifdef __SOFTFP__
-	(void)fpsetround(__SHIFTIN(*envp, VFP_FPSCR_RMODE));
-	(void)fpsetmask(fpgetmask() | __SHIFTOUT(*envp, VFP_FPSCR_ESUM));
-	(void)fpsetsticky(fpgetsticky() | __SHIFTOUT(*envp, VFP_FPSCR_CSUM));
-#else
-	int fpscr = armreg_fpscr_read() & ~(VFP_FPSCR_ESUM|VFP_FPSCR_CSUM);
+	int fpscr = armreg_fpscr_read();
+	fpscr &= ~(VFP_FPSCR_ESUM|VFP_FPSCR_RMODE);
 	fpscr |= *envp;
 	armreg_fpscr_write(fpscr);
-#endif
 
 	/* Success */
 	return 0;

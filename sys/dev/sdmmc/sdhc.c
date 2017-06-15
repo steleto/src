@@ -1,4 +1,4 @@
-/*	$NetBSD: sdhc.c,v 1.97 2017/01/07 15:05:08 kiyohara Exp $	*/
+/*	$NetBSD: sdhc.c,v 1.100 2017/04/22 21:49:41 jmcneill Exp $	*/
 /*	$OpenBSD: sdhc.c,v 1.25 2009/01/13 19:44:20 grange Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sdhc.c,v 1.97 2017/01/07 15:05:08 kiyohara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sdhc.c,v 1.100 2017/04/22 21:49:41 jmcneill Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sdmmc.h"
@@ -192,6 +192,7 @@ static int	sdhc_signal_voltage(sdmmc_chipset_handle_t, int);
 static int	sdhc_execute_tuning1(struct sdhc_host *, int);
 static int	sdhc_execute_tuning(sdmmc_chipset_handle_t, int);
 static void	sdhc_tuning_timer(void *);
+static void	sdhc_hw_reset(sdmmc_chipset_handle_t);
 static int	sdhc_start_command(struct sdhc_host *, struct sdmmc_command *);
 static int	sdhc_wait_state(struct sdhc_host *, uint32_t, uint32_t);
 static int	sdhc_soft_reset(struct sdhc_host *, int);
@@ -235,6 +236,7 @@ static struct sdmmc_chip_functions sdhc_functions = {
 	.signal_voltage = sdhc_signal_voltage,
 	.bus_clock_ddr = sdhc_bus_clock_ddr,
 	.execute_tuning = sdhc_execute_tuning,
+	.hw_reset = sdhc_hw_reset,
 };
 
 static int
@@ -1107,7 +1109,13 @@ sdhc_bus_clock_ddr(sdmmc_chipset_handle_t sch, int freq, bool ddr)
 		if (freq > 100000) {
 			HSET2(hp, SDHC_HOST_CTL2, SDHC_UHS_MODE_SELECT_SDR104);
 		} else if (freq > 50000) {
-			HSET2(hp, SDHC_HOST_CTL2, SDHC_UHS_MODE_SELECT_SDR50);
+			if (ddr) {
+				HSET2(hp, SDHC_HOST_CTL2,
+				    SDHC_UHS_MODE_SELECT_DDR50);
+			} else {
+				HSET2(hp, SDHC_HOST_CTL2,
+				    SDHC_UHS_MODE_SELECT_SDR50);
+			}
 		} else if (freq > 25000) {
 			if (ddr) {
 				HSET2(hp, SDHC_HOST_CTL2,
@@ -1334,23 +1342,40 @@ static int
 sdhc_signal_voltage(sdmmc_chipset_handle_t sch, int signal_voltage)
 {
 	struct sdhc_host *hp = (struct sdhc_host *)sch;
+	int error = 0;
+
+	if (hp->specver < SDHC_SPEC_VERS_300)
+		return EINVAL;
 
 	mutex_enter(&hp->intr_lock);
 	switch (signal_voltage) {
 	case SDMMC_SIGNAL_VOLTAGE_180:
+		if (hp->sc->sc_vendor_signal_voltage != NULL) {
+			error = hp->sc->sc_vendor_signal_voltage(hp->sc,
+			    signal_voltage);
+			if (error != 0)
+				break;
+		}
 		if (!ISSET(hp->sc->sc_flags, SDHC_FLAG_USDHC))
 			HSET2(hp, SDHC_HOST_CTL2, SDHC_1_8V_SIGNAL_EN);
 		break;
 	case SDMMC_SIGNAL_VOLTAGE_330:
 		if (!ISSET(hp->sc->sc_flags, SDHC_FLAG_USDHC))
 			HCLR2(hp, SDHC_HOST_CTL2, SDHC_1_8V_SIGNAL_EN);
+		if (hp->sc->sc_vendor_signal_voltage != NULL) {
+			error = hp->sc->sc_vendor_signal_voltage(hp->sc,
+			    signal_voltage);
+			if (error != 0)
+				break;
+		}
 		break;
 	default:
-		return EINVAL;
+		error = EINVAL;
+		break;
 	}
 	mutex_exit(&hp->intr_lock);
 
-	return 0;
+	return error;
 }
 
 /*
@@ -1468,6 +1493,16 @@ sdhc_tuning_timer(void *arg)
 	struct sdhc_host *hp = arg;
 
 	atomic_swap_uint(&hp->tuning_timer_pending, 1);
+}
+
+static void
+sdhc_hw_reset(sdmmc_chipset_handle_t sch)
+{
+	struct sdhc_host *hp = (struct sdhc_host *)sch;
+	struct sdhc_softc *sc = hp->sc;
+
+	if (sc->sc_vendor_hw_reset != NULL)
+		sc->sc_vendor_hw_reset(sc, hp);
 }
 
 static int
@@ -2391,6 +2426,42 @@ kmutex_t *
 sdhc_host_lock(struct sdhc_host *hp)
 {
 	return &hp->intr_lock;
+}
+
+uint8_t
+sdhc_host_read_1(struct sdhc_host *hp, int reg)
+{
+	return HREAD1(hp, reg);
+}
+
+uint16_t
+sdhc_host_read_2(struct sdhc_host *hp, int reg)
+{
+	return HREAD2(hp, reg);
+}
+
+uint32_t
+sdhc_host_read_4(struct sdhc_host *hp, int reg)
+{
+	return HREAD4(hp, reg);
+}
+
+void
+sdhc_host_write_1(struct sdhc_host *hp, int reg, uint8_t val)
+{
+	HWRITE1(hp, reg, val);
+}
+
+void
+sdhc_host_write_2(struct sdhc_host *hp, int reg, uint16_t val)
+{
+	HWRITE2(hp, reg, val);
+}
+
+void
+sdhc_host_write_4(struct sdhc_host *hp, int reg, uint32_t val)
+{
+	HWRITE4(hp, reg, val);
 }
 
 #ifdef SDHC_DEBUG

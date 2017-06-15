@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_misc.c,v 1.236 2017/01/13 22:45:15 christos Exp $	*/
+/*	$NetBSD: linux_misc.c,v 1.238 2017/05/06 21:34:51 joerg Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998, 1999, 2008 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.236 2017/01/13 22:45:15 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.238 2017/05/06 21:34:51 joerg Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -603,7 +603,7 @@ linux_sys_mprotect(struct lwp *l, const struct linux_sys_mprotect_args *uap, reg
 		}
 	}
 	vm_map_unlock(map);
-	return uvm_map_protect(map, start, end, prot, FALSE);
+	return uvm_map_protect_user(l, start, end, prot);
 }
 #endif /* USRSTACK */
 
@@ -788,7 +788,7 @@ again:
 			*((char *)&idb + idb.d_reclen - 1) = bdp->d_type;
 		}
 		memcpy(idb.d_name, bdp->d_name,
-		    MIN(sizeof(idb.d_name), bdp->d_namlen));
+		    MIN(sizeof(idb.d_name), bdp->d_namlen + 1));
 		if ((error = copyout((void *)&idb, outp, linux_reclen)))
 			goto out;
 		/* advance past this real entry */

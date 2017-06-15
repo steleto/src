@@ -1,4 +1,4 @@
-/*	$NetBSD: apropos-utils.c,v 1.30 2017/01/10 04:34:07 kamil Exp $	*/
+/*	$NetBSD: apropos-utils.c,v 1.37 2017/05/01 05:28:00 abhinav Exp $	*/
 /*-
  * Copyright (c) 2011 Abhinav Upadhyay <er.abhinav.upadhyay@gmail.com>
  * All rights reserved.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: apropos-utils.c,v 1.30 2017/01/10 04:34:07 kamil Exp $");
+__RCSID("$NetBSD: apropos-utils.c,v 1.37 2017/05/01 05:28:00 abhinav Exp $");
 
 #include <sys/queue.h>
 #include <sys/stat.h>
@@ -89,10 +89,8 @@ lower(char *str)
 	assert(str);
 	int i = 0;
 	char c;
-	while (str[i] != '\0') {
-		c = tolower((unsigned char) str[i]);
-		str[i++] = c;
-	}
+	while ((c = str[i]) != '\0')
+		str[i++] = tolower((unsigned char) c);
 	return str;
 }
 
@@ -111,31 +109,34 @@ void
 concat2(char **dst, const char *src, size_t srclen)
 {
 	size_t totallen, dstlen;
+	char *mydst = *dst;
 	assert(src != NULL);
 
 	/*
 	 * If destination buffer dst is NULL, then simply
 	 * strdup the source buffer
 	 */
-	if (*dst == NULL) {
-		*dst = estrndup(src, srclen);
+	if (mydst == NULL) {
+		mydst = estrndup(src, srclen);
+		*dst = mydst;
 		return;
 	}
 
-	dstlen = strlen(*dst);
+	dstlen = strlen(mydst);
 	/*
 	 * NUL Byte and separator space
 	 */
 	totallen = dstlen + srclen + 2;
 
-	*dst = erealloc(*dst, totallen);
+	mydst = erealloc(mydst, totallen);
 
 	/* Append a space at the end of dst */
-	(*dst)[dstlen++] = ' ';
+	mydst[dstlen++] = ' ';
 
 	/* Now, copy src at the end of dst */
-	memcpy(*dst + dstlen, src, srclen);
-	(*dst)[dstlen + srclen] = '\0';
+	memcpy(mydst + dstlen, src, srclen);
+	mydst[dstlen + srclen] = '\0';
+	*dst = mydst;
 }
 
 void
@@ -176,13 +177,15 @@ create_db(sqlite3 *db)
 	    "CREATE VIRTUAL TABLE mandb USING fts4(section, name, "
 		"name_desc, desc, lib, return_vals, env, files, "
 		"exit_status, diagnostics, errors, md5_hash UNIQUE, machine, "
-		"compress=zip, uncompress=unzip, tokenize=porter, "
-		"notindexed=section, notindexed=md5_hash); "
+#ifndef DEBUG		
+		"compress=zip, uncompress=unzip, "
+#endif		
+		"tokenize=porter, notindexed=section, notindexed=md5_hash); "
 	    //mandb_meta
 	    "CREATE TABLE IF NOT EXISTS mandb_meta(device, inode, mtime, "
 		"file UNIQUE, md5_hash UNIQUE, id  INTEGER PRIMARY KEY); "
 	    //mandb_links
-	    "CREATE TABLE IF NOT EXISTS mandb_links(link, target, section, "
+	    "CREATE TABLE IF NOT EXISTS mandb_links(link COLLATE NOCASE, target, section, "
 		"machine, md5_hash); ";
 
 	sqlite3_exec(db, sqlstr, NULL, NULL, &errmsg);
@@ -501,61 +504,42 @@ generate_search_query(query_args *args, const char *snippet_args[3])
 	char *section_clause = NULL;
 	char *limit_clause = NULL;
 	char *machine_clause = NULL;
-	char *query;
+	char *query = NULL;
 
-	if (args->machine)
-		easprintf(&machine_clause, "AND machine = \'%s\' ",
-		    args->machine);
-
-
-	/* We want to build a query of the form: "select x,y,z from mandb where
-	 * mandb match :query [AND (section LIKE '1' OR section LIKE '2' OR...)]
-	 * ORDER BY rank DESC..."
-	 * NOTES:
-	 *   1. The portion in square brackets is optional, it will be there
-	 *      only if the user has specified an option on the command line
-	 *      to search in one or more specific sections.
-	 */
-	char *sections_str = args->sec_nums;
-	char *temp;
-	if (sections_str) {
-		while (*sections_str) {
-			size_t len = strcspn(sections_str, " ");
-			char *sec = sections_str;
-			if (sections_str[len] == 0) {
-				sections_str += len;
-			} else {
-				sections_str[len] = 0;
-				sections_str += len + 1;
-			}
-			easprintf(&temp, "\'%s\',", sec);
-
-			if (section_clause) {
-				concat(&section_clause, temp);
-				free(temp);
-			} else {
-				section_clause = temp;
-			}
-		}
-		if (section_clause) {
-			/*
-			 * At least one section requested, add glue for query.
-			 * Before doing that, remove the comma at the end of
-			 * section_clause
-			 */
-			size_t section_clause_len = strlen(section_clause);
-			if (section_clause[section_clause_len - 1] == ',')
-				section_clause[section_clause_len - 1] = 0;
-			temp = section_clause;
-			easprintf(&section_clause, " AND section IN (%s)", temp);
-			free(temp);
-		}
+	if (args->machine) {
+		machine_clause = sqlite3_mprintf("AND mandb.machine=%Q", args->machine);
+		if (machine_clause == NULL)
+			goto RETURN;
 	}
 
 	if (args->nrec >= 0) {
 		/* Use the provided number of records and offset */
-		easprintf(&limit_clause, " LIMIT %d OFFSET %d",
+		limit_clause = sqlite3_mprintf(" LIMIT %d OFFSET %d",
 		    args->nrec, args->offset);
+		if (limit_clause == NULL)
+			goto RETURN;
+	}
+
+	/* We want to build a query of the form: "select x,y,z from mandb where
+	 * mandb match :query [AND (section IN ('1', '2')]
+	 * ORDER BY rank DESC [LIMIT 10 OFFSET 0]"
+	 * NOTES:
+	 *   1. The portion in first pair of square brackets is optional.
+	 *      It will be there only if the user has specified an option
+	 *      to search in one or more specific sections.
+	 *   2. The LIMIT portion will be there if the user has specified
+	 *      a limit using the -n option.
+	 */
+	if (args->sections && args->sections[0]) {
+		concat(&section_clause, " AND mandb.section IN (");
+		for (size_t i = 0; args->sections[i]; i++) {
+			char *temp;
+			char c = args->sections[i + 1]? ',': ')';
+			if ((temp = sqlite3_mprintf("%Q%c", args->sections[i], c)) == NULL)
+				goto RETURN;
+			concat(&section_clause, temp);
+			free(temp);
+		}
 	}
 
 	if (snippet_args == NULL) {
@@ -577,6 +561,35 @@ generate_search_query(query_args *args, const char *snippet_args[3])
 		section_clause ? section_clause : "",
 		limit_clause ? limit_clause : "");
 		free(wild);
+	} else if (strchr(args->search_str, ' ') == NULL) {
+		/*
+		 * If it's a single word query, we want to search in the
+		 * links table as well. If the link table contains an entry
+		 * for the queried keyword, we want to use that as the name of
+		 * the man page.
+		 * For example, for `apropos realloc` the output should be
+		 * realloc(3) and not malloc(3).
+		 */
+		query = sqlite3_mprintf(
+		    "SELECT section, name, name_desc, machine,"
+		    " snippet(mandb, %Q, %Q, %Q, -1, 40 ),"
+		    " rank_func(matchinfo(mandb, \"pclxn\")) AS rank"
+		    " FROM mandb WHERE name NOT IN ("
+		    " SELECT target FROM mandb_links WHERE link=%Q AND"
+		    " mandb_links.section=mandb.section) AND mandb MATCH %Q %s %s"
+		    " UNION"
+		    " SELECT mandb.section, mandb_links.link AS name, mandb.name_desc,"
+		    " mandb.machine, '' AS snippet, 100.00 AS rank"
+		    " FROM mandb JOIN mandb_links ON mandb.name=mandb_links.target and"
+		    " mandb.section=mandb_links.section WHERE mandb_links.link=%Q"
+		    " %s %s"
+		    " ORDER BY rank DESC %s",
+		    snippet_args[0], snippet_args[1], snippet_args[2],
+		    args->search_str, args->search_str, section_clause ? section_clause : "",
+		    machine_clause ? machine_clause : "", args->search_str,
+		    machine_clause ? machine_clause : "",
+		    section_clause ? section_clause : "",
+		    limit_clause ? limit_clause : "");
 	} else {
 	    query = sqlite3_mprintf("SELECT section, name, name_desc, machine,"
 		" snippet(mandb, %Q, %Q, %Q, -1, 40 ),"
@@ -592,6 +605,7 @@ generate_search_query(query_args *args, const char *snippet_args[3])
 		limit_clause ? limit_clause : "");
 	}
 
+RETURN:
 	free(machine_clause);
 	free(section_clause);
 	free(limit_clause);

@@ -1,4 +1,4 @@
-#	$NetBSD: t_basic.sh,v 1.1 2017/01/16 08:18:11 ozaki-r Exp $
+#	$NetBSD: t_basic.sh,v 1.6 2017/05/18 06:34:48 ozaki-r Exp $
 #
 # Copyright (c) 2017 Internet Initiative Japan Inc.
 # All rights reserved.
@@ -29,25 +29,20 @@ SOCK_CLIENT=unix://carp_client
 SOCK_MASTER=unix://carp_master
 SOCK_BACKUP=unix://carp_backup
 BUS=bus_carp
+TIMEOUT=3
+
+DEBUG=${DEBUG:-false}
+
 IP_CLIENT=10.1.1.240
 IP_MASTER=10.1.1.1
 IP_BACKUP=10.1.1.2
 IP_CARP=10.1.1.100
-TIMEOUT=3
-
-atf_test_case carp_handover cleanup
-
-carp_handover_head()
-{
-
-	atf_set "descr" "Tests for CARP handover"
-	atf_set "require.progs" "rump_server"
-}
 
 setup_carp()
 {
 	local sock=$1
 	local master=$2
+	local carpdevip=$3
 	local carpif= ip= advskew=
 
 	if $master; then
@@ -61,11 +56,22 @@ setup_carp()
 	fi
 
 	export RUMP_SERVER=$sock
+	if $DEBUG; then
+		atf_check -s exit:0 -o match:'0.->.1' \
+		    rump.sysctl -w net.inet.carp.log=1
+	fi
 	atf_check -s exit:0 rump.ifconfig $carpif create
-	atf_check -s exit:0 rump.ifconfig shmif0 $ip/24 up
-	atf_check -s exit:0 rump.ifconfig $carpif \
-	    vhid 175 advskew $advskew advbase 1 pass s3cret \
-	    $IP_CARP netmask 255.255.255.0
+	if [ $carpdevip = yes ]; then
+		atf_check -s exit:0 rump.ifconfig shmif0 $ip/24 up
+		atf_check -s exit:0 rump.ifconfig $carpif \
+		    vhid 175 advskew $advskew advbase 1 pass s3cret \
+		    $IP_CARP netmask 255.255.255.0
+	else
+		atf_check -s exit:0 rump.ifconfig shmif0 up
+		atf_check -s exit:0 rump.ifconfig $carpif \
+		    vhid 175 advskew $advskew advbase 1 pass s3cret \
+		    carpdev shmif0 $IP_CARP netmask 255.255.255.0
+	fi
 	atf_check -s exit:0 rump.ifconfig -w 10
 }
 
@@ -91,8 +97,10 @@ wait_handover()
 	fi
 }
 
-carp_handover_body()
+test_carp_handover_ipv4()
 {
+	local op=$1
+	local carpdevip=$2
 
 	rump_server_start $SOCK_CLIENT
 	rump_server_start $SOCK_MASTER
@@ -102,18 +110,20 @@ carp_handover_body()
 	rump_server_add_iface $SOCK_MASTER shmif0 $BUS
 	rump_server_add_iface $SOCK_BACKUP shmif0 $BUS
 
-	setup_carp $SOCK_MASTER true
-	setup_carp $SOCK_BACKUP false
+	setup_carp $SOCK_MASTER true $carpdevip
+	setup_carp $SOCK_BACKUP false $carpdevip
 
 	export RUMP_SERVER=$SOCK_CLIENT
 	atf_check -s exit:0 rump.ifconfig shmif0 $IP_CLIENT/24 up
 	atf_check -s exit:0 rump.ifconfig -w 10
 
-	# Check that the primary addresses are up
-	atf_check -s exit:0 -o ignore \
-	    rump.ping -n -w $TIMEOUT -c 1 $IP_MASTER
-	atf_check -s exit:0 -o ignore \
-	    rump.ping -n -w $TIMEOUT -c 1 $IP_BACKUP
+	if [ $carpdevip = yes ]; then
+		# Check that the primary addresses are up
+		atf_check -s exit:0 -o ignore \
+		    rump.ping -n -w $TIMEOUT -c 1 $IP_MASTER
+		atf_check -s exit:0 -o ignore \
+		    rump.ping -n -w $TIMEOUT -c 1 $IP_BACKUP
+	fi
 
 	# Give carp a while to croak
 	sleep 4
@@ -134,12 +144,20 @@ carp_handover_body()
 	    rump.ping -n -w $TIMEOUT -c 1 $IP_CARP
 
 	# KILLING SPREE
-	env RUMP_SERVER=$SOCK_MASTER rump.halt
+	if [ $op = halt ]; then
+		env RUMP_SERVER=$SOCK_MASTER rump.halt
+	elif [ $op = ifdown ]; then
+		env RUMP_SERVER=$SOCK_MASTER rump.ifconfig shmif0 down
+	fi
 	sleep 1
 
 	# Check that primary is now dead
-	atf_check -s not-exit:0 -o ignore \
-	    rump.ping -n -w $TIMEOUT -c 1 $IP_MASTER
+	if [ $carpdevip = yes ]; then
+		atf_check -s not-exit:0 -o ignore \
+		    rump.ping -n -w $TIMEOUT -c 1 $IP_MASTER
+	else
+		# XXX how to check?
+	fi
 
 	# Do it in installments. carp will cluck meanwhile
 	wait_handover
@@ -149,17 +167,201 @@ carp_handover_body()
 	$DEBUG && rump.ifconfig
 	atf_check -s exit:0 -o match:'carp: MASTER carpdev shmif0' \
 	    rump.ifconfig carp1
+
+	if [ $op = ifdown ]; then
+		rump_server_destroy_ifaces
+	fi
 }
 
-carp_handover_cleanup()
-{
+IP6_CLIENT=fd00:1::240
+IP6_MASTER=fd00:1::1
+IP6_BACKUP=fd00:1::2
+IP6_CARP=fd00:1::100
 
-	$DEBUG && dump
-	cleanup
+setup_carp6()
+{
+	local sock=$1
+	local master=$2
+	local carpdevip=$3
+	local carpif= ip= advskew=
+
+	if $master; then
+		carpif=carp0
+		ip=$IP6_MASTER
+		advskew=0
+	else
+		carpif=carp1
+		ip=$IP6_BACKUP
+		advskew=200
+	fi
+
+	export RUMP_SERVER=$sock
+	if $DEBUG; then
+		atf_check -s exit:0 -o match:'0.->.1' \
+		    rump.sysctl -w net.inet.carp.log=1
+	fi
+	atf_check -s exit:0 rump.ifconfig $carpif create
+	if [ $carpdevip = yes ]; then
+		atf_check -s exit:0 rump.ifconfig shmif0 inet6 $ip up
+		atf_check -s exit:0 rump.ifconfig $carpif inet6 \
+		    vhid 175 advskew $advskew advbase 1 pass s3cret $IP6_CARP
+	else
+		atf_check -s exit:0 rump.ifconfig shmif0 up
+		atf_check -s exit:0 rump.ifconfig $carpif inet6 \
+		    vhid 175 advskew $advskew advbase 1 pass s3cret \
+		    carpdev shmif0 $IP6_CARP
+	fi
+	atf_check -s exit:0 rump.ifconfig -w 10
+}
+
+wait_carp6_handover()
+{
+	local i=0
+
+	export RUMP_SERVER=$SOCK_CLIENT
+
+	while [ $i -ne 5 ]; do
+		$DEBUG && echo "Trying ping6 $IP6_CARP"
+		rump.ping6 -n -X 1 -c 1 $IP6_CARP >/dev/null
+		if [ $? = 0 ]; then
+			$DEBUG && echo "Passed ping $IP6_CARP"
+			break;
+		fi
+		$DEBUG && echo "Failed ping6 $IP6_CARP"
+		i=$((i + 1))
+	done
+
+	if [ $i -eq 5 ]; then
+		atf_fail "Failed to failover (5 sec)"
+	fi
+}
+
+test_carp_handover_ipv6()
+{
+	local op=$1
+	local carpdevip=$2
+
+	rump_server_start $SOCK_CLIENT netinet6
+	rump_server_start $SOCK_MASTER netinet6
+	rump_server_start $SOCK_BACKUP netinet6
+
+	rump_server_add_iface $SOCK_CLIENT shmif0 $BUS
+	rump_server_add_iface $SOCK_MASTER shmif0 $BUS
+	rump_server_add_iface $SOCK_BACKUP shmif0 $BUS
+
+	setup_carp6 $SOCK_MASTER true $carpdevip
+	setup_carp6 $SOCK_BACKUP false $carpdevip
+
+	export RUMP_SERVER=$SOCK_CLIENT
+	atf_check -s exit:0 rump.ifconfig shmif0 inet6 $IP6_CLIENT up
+	atf_check -s exit:0 rump.ifconfig -w 10
+
+	if [ $carpdevip = yes ]; then
+		# Check that the primary addresses are up
+		atf_check -s exit:0 -o ignore \
+		    rump.ping6 -n -X $TIMEOUT -c 1 $IP6_MASTER
+		atf_check -s exit:0 -o ignore \
+		    rump.ping6 -n -X $TIMEOUT -c 1 $IP6_BACKUP
+	fi
+
+	# Give carp a while to croak
+	sleep 4
+
+	# Check state
+	export RUMP_SERVER=$SOCK_MASTER
+	$DEBUG && rump.ifconfig
+	atf_check -s exit:0 -o match:'carp: MASTER carpdev shmif0' \
+	    rump.ifconfig carp0
+	export RUMP_SERVER=$SOCK_BACKUP
+	$DEBUG && rump.ifconfig
+	atf_check -s exit:0 -o match:'carp: BACKUP carpdev shmif0' \
+	    rump.ifconfig carp1
+	export RUMP_SERVER=$SOCK_CLIENT
+
+	# Check that the shared IP works
+	atf_check -s exit:0 -o ignore \
+	    rump.ping6 -n -X $TIMEOUT -c 1 $IP6_CARP
+
+	# KILLING SPREE
+	if [ $op = halt ]; then
+		env RUMP_SERVER=$SOCK_MASTER rump.halt
+	elif [ $op = ifdown ]; then
+		env RUMP_SERVER=$SOCK_MASTER rump.ifconfig shmif0 down
+	fi
+	sleep 1
+
+	# Check that primary is now dead
+	if [ $carpdevip = yes ]; then
+		atf_check -s not-exit:0 -o ignore \
+		    rump.ping6 -n -X $TIMEOUT -c 1 $IP6_MASTER
+	else
+		# XXX how to check?
+	fi
+
+	# Do it in installments. carp will cluck meanwhile
+	wait_carp6_handover
+
+	# Check state
+	export RUMP_SERVER=$SOCK_BACKUP
+	$DEBUG && rump.ifconfig
+	atf_check -s exit:0 -o match:'carp: MASTER carpdev shmif0' \
+	    rump.ifconfig carp1
+
+	if [ $op = ifdown ]; then
+		rump_server_destroy_ifaces
+	fi
+}
+
+add_test_case()
+{
+	local ipproto=$1
+	local halt=$2
+	local carpdevip=$3
+	local expected_failure_code=
+
+	name="carp_handover_${ipproto}_${halt}"
+	desc="Tests for CARP (${ipproto}) handover on ${halt}"
+	if [ $carpdevip = yes ]; then
+		name="${name}_carpdevip"
+		desc="$desc with carpdev IP"
+	else
+		name="${name}_nocarpdevip"
+		desc="$desc without carpdev IP"
+	fi
+	if [ $ipproto = ipv6 -a $carpdevip = no ]; then
+		expected_failure_code="atf_expect_fail 'nd6 needs to be fixed';"
+	fi
+
+	atf_test_case ${name} cleanup
+	eval "							\
+	    ${name}_head() {					\
+	        atf_set \"descr\" \"$desc\";			\
+	        atf_set \"require.progs\" \"rump_server\";	\
+	    };							\
+	    ${name}_body() {					\
+	        $expected_failure_code				\
+	        test_carp_handover_${ipproto} $halt $carpdevip;	\
+	        if [ $halt != halt ]; then			\
+	             rump_server_destroy_ifaces;		\
+	        fi						\
+	    };							\
+	    ${name}_cleanup() {					\
+	        $DEBUG && dump;					\
+	        cleanup;					\
+	    }							\
+	"
+	atf_add_test_case ${name}
 }
 
 atf_init_test_cases()
 {
+	local proto= halt= carpdevip=
 
-	atf_add_test_case carp_handover
+	for proto in ipv4 ipv6; do
+		for halt in halt ifdown; do
+			for carpdevip in yes no; do
+				add_test_case $proto $halt $carpdevip
+			done
+		done
+	done
 }

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2016, Intel Corp.
+ * Copyright (C) 2000 - 2017, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -171,6 +171,7 @@
 #define ACPI_IORT1_OFFSET(f)            (UINT16) ACPI_OFFSET (ACPI_IORT_NAMED_COMPONENT,f)
 #define ACPI_IORT2_OFFSET(f)            (UINT16) ACPI_OFFSET (ACPI_IORT_ROOT_COMPLEX,f)
 #define ACPI_IORT3_OFFSET(f)            (UINT16) ACPI_OFFSET (ACPI_IORT_SMMU,f)
+#define ACPI_IORT3A_OFFSET(f)           (UINT16) ACPI_OFFSET (ACPI_IORT_SMMU_GSI,f)
 #define ACPI_IORT4_OFFSET(f)            (UINT16) ACPI_OFFSET (ACPI_IORT_SMMU_V3,f)
 #define ACPI_IORTA_OFFSET(f)            (UINT16) ACPI_OFFSET (ACPI_IORT_MEMORY_ACCESS,f)
 #define ACPI_IORTH_OFFSET(f)            (UINT16) ACPI_OFFSET (ACPI_IORT_NODE,f)
@@ -259,6 +260,7 @@
 #define ACPI_GTDT0a_FLAG_OFFSET(f,o)    ACPI_FLAG_OFFSET (ACPI_GTDT_TIMER_ENTRY,f,o)
 #define ACPI_GTDT1_FLAG_OFFSET(f,o)     ACPI_FLAG_OFFSET (ACPI_GTDT_WATCHDOG,f,o)
 #define ACPI_IORT3_FLAG_OFFSET(f,o)     ACPI_FLAG_OFFSET (ACPI_IORT_SMMU,f,o)
+#define ACPI_IORT3a_FLAG_OFFSET(f,o)    ACPI_FLAG_OFFSET (ACPI_IORT_SMMU_GSI,f,o)
 #define ACPI_IORT4_FLAG_OFFSET(f,o)     ACPI_FLAG_OFFSET (ACPI_IORT_SMMU_V3,f,o)
 #define ACPI_IORTA_FLAG_OFFSET(f,o)     ACPI_FLAG_OFFSET (ACPI_IORT_MEMORY_ACCESS,f,o)
 #define ACPI_IORTM_FLAG_OFFSET(f,o)     ACPI_FLAG_OFFSET (ACPI_IORT_ID_MAPPING,f,o)
@@ -400,7 +402,7 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoFacs[] =
  *
  ******************************************************************************/
 
-/* FADT version 1 (ACPI 1.0) */
+/* ACPI 1.0 FADT (Version 1) */
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoFadt1[] =
 {
@@ -486,7 +488,18 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoFadt1[] =
     ACPI_DMT_TERMINATOR
 };
 
-/* FADT version 3 (ACPI 2.0) */
+/* ACPI 1.0 MS Extensions (FADT version 2) */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoFadt2[] =
+{
+    {ACPI_DMT_GAS,      ACPI_FADT_OFFSET (ResetRegister),           "Reset Register", 0},
+    {ACPI_DMT_UINT8,    ACPI_FADT_OFFSET (ResetValue),              "Value to cause reset", 0},
+    {ACPI_DMT_UINT16,   ACPI_FADT_OFFSET (ArmBootFlags),            "Reserved", 0},
+    {ACPI_DMT_UINT8,    ACPI_FADT_OFFSET (MinorRevision),           "Reserved", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* ACPI 2.0+ Extensions (FADT version 3, 4, and 5) */
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoFadt3[] =
 {
@@ -510,23 +523,16 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoFadt3[] =
     ACPI_DMT_TERMINATOR
 };
 
-/* FADT version 4 (ACPI 3.0 and ACPI 4.0) */
-
-ACPI_DMTABLE_INFO           AcpiDmTableInfoFadt4[] =
-{
-    {ACPI_DMT_GAS,      ACPI_FADT_OFFSET (SleepControl),            "Sleep Control Register", 0},
-    ACPI_DMT_TERMINATOR
-};
-
-/* FADT version 5 (ACPI 5.0) */
+/* ACPI 5.0 Extensions (FADT version 5) */
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoFadt5[] =
 {
+    {ACPI_DMT_GAS,      ACPI_FADT_OFFSET (SleepControl),            "Sleep Control Register", 0},
     {ACPI_DMT_GAS,      ACPI_FADT_OFFSET (SleepStatus),             "Sleep Status Register", 0},
     ACPI_DMT_TERMINATOR
 };
 
-/* FADT version 6 (ACPI 6.0) */
+/* ACPI 6.0 Extensions (FADT version 6) */
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoFadt6[] =
 {
@@ -1545,8 +1551,12 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoIort3[] =
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoIort3a[] =
 {
-    {ACPI_DMT_UINT64,   0,                                          "SMMU_NSgIrpt Interrupt", 0},
-    {ACPI_DMT_UINT64,   0,                                          "SMMU_NSgCfgIrpt Interrupt", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORT3A_OFFSET (NSgIrpt),                   "NSgIrpt", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORT3A_OFFSET (NSgIrptFlags),              "NSgIrpt Flags (decoded below)", 0},
+    {ACPI_DMT_FLAG0,    ACPI_IORT3a_FLAG_OFFSET (NSgIrptFlags, 0),      "Edge Triggered", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORT3A_OFFSET (NSgCfgIrpt),                "NSgCfgIrpt", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORT3A_OFFSET (NSgCfgIrptFlags),           "NSgCfgIrpt Flags (decoded below)", 0},
+    {ACPI_DMT_FLAG0,    ACPI_IORT3a_FLAG_OFFSET (NSgCfgIrptFlags, 0),   "Edge Triggered", 0},
     ACPI_DMT_TERMINATOR
 };
 

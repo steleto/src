@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_soc.c,v 1.9 2016/03/26 09:07:31 skrll Exp $ */
+/* $NetBSD: tegra_soc.c,v 1.13 2017/05/28 23:32:14 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -30,9 +30,8 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_soc.c,v 1.9 2016/03/26 09:07:31 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_soc.c,v 1.13 2017/05/28 23:32:14 jmcneill Exp $");
 
-#define	_ARM32_BUS_DMA_PRIVATE
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/cpu.h>
@@ -52,12 +51,6 @@ bus_space_handle_t tegra_host1x_bsh;
 bus_space_handle_t tegra_ppsb_bsh;
 bus_space_handle_t tegra_apb_bsh;
 bus_space_handle_t tegra_ahb_a2_bsh;
-
-struct arm32_bus_dma_tag tegra_dma_tag = {
-	_BUS_DMAMAP_FUNCS,
-	_BUS_DMAMEM_FUNCS,
-	_BUS_DMATAG_FUNCS,
-};
 
 static void	tegra_mpinit(void);
 
@@ -84,25 +77,6 @@ tegra_bootstrap(void)
 	tegra_mpinit();
 }
 
-void
-tegra_dma_bootstrap(psize_t psize)
-{
-}
-
-void
-tegra_cpuinit(void)
-{
-	switch (tegra_chip_id()) {
-#ifdef SOC_TEGRA124
-	case CHIP_ID_TEGRA124:
-		tegra124_cpuinit();
-		break;
-#endif
-	}
-
-	tegra_cpufreq_init();
-}
-
 static void
 tegra_mpinit(void)
 {
@@ -111,6 +85,11 @@ tegra_mpinit(void)
 #ifdef SOC_TEGRA124
 	case CHIP_ID_TEGRA124:
 		tegra124_mpinit();
+		break;
+#endif
+#ifdef SOC_TEGRA210
+	case CHIP_ID_TEGRA210:
+		tegra210_mpinit();
 		break;
 #endif
 	default:
@@ -141,6 +120,7 @@ tegra_chip_name(void)
 	switch (tegra_chip_id()) {
 	case CHIP_ID_TEGRA124:	return "Tegra K1 (T124)";
 	case CHIP_ID_TEGRA132:	return "Tegra K1 (T132)";
+	case CHIP_ID_TEGRA210:	return "Tegra X1 (T210)";
 	default:		return "Unknown Tegra SoC";
 	}
 }

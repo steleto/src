@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.README,v 1.357 2017/01/07 22:27:36 christos Exp $
+#	$NetBSD: bsd.README,v 1.362 2017/05/21 15:28:42 riastradh Exp $
 #	@(#)bsd.README	8.2 (Berkeley) 4/2/94
 
 This is the README file for the make "include" files for the NetBSD
@@ -146,13 +146,6 @@ MKCOMPATX11  	If "yes", build and install the X11 libraries when
 
 MKCOMPLEX	If "no", don't build libm support for <complex.h>
 		Default: yes
-
-MKCRYPTO	If "no", no cryptography support will be built into the system,
-		and also acts as "MKKERBEROS=no".
-		Default: yes
-
-MKCRYPTO_RC5	If not "no", RC5 support will be built into libcrypto_rc5
-		Default: no
 
 MKCTF		If "no", do not build and install CTF tools, and also
 		don't generate and manipulate CTF data of ELF binaries
@@ -407,6 +400,15 @@ MKSOFTFLOAT	If not "no", build with options to enable the compiler to
 
 MKSTATICLIB	If "no", don't build or install the normal static (*.a)
 		libraries.
+		Default: yes
+
+MKSTRIPSYM	If "yes", strip all local symbols from shared libraries;
+		the affect is equivalent to -x option of ld(1). If "no",
+		strip only temporary local symbols; the affect is equivalent
+		to -X option of ld(1). Keeping non-temporary local symbols
+		such as static function names is useful on using DTrace for
+		userland libraries and getting a backtrace from a rump kernel
+		loading shared libraries.
 		Default: yes
 
 MKTOOLSDEBUG	If "yes" build the tools with debugging symbols.
@@ -1557,9 +1559,6 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBCRTI?=	${DESTDIR}/usr/lib/crti.o
 		LIBCRYPT?=	${DESTDIR}/usr/lib/libcrypt.a
 		LIBCRYPTO?=	${DESTDIR}/usr/lib/libcrypto.a
-		LIBCRYPTO_IDEA?=${DESTDIR}/usr/lib/libcrypto_idea.a
-		LIBCRYPTO_MDC2?=${DESTDIR}/usr/lib/libcrypto_mdc2.a
-		LIBCRYPTO_RC5?=	${DESTDIR}/usr/lib/libcrypto_rc5.a
 		LIBCURSES?=	${DESTDIR}/usr/lib/libcurses.a
 		LIBC_PIC?=	${DESTDIR}/usr/lib/libc_pic.a
 		LIBDBM?=	${DESTDIR}/usr/lib/libdbm.a
@@ -1611,7 +1610,6 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBPMC?=	${DESTDIR}/usr/lib/libpmc.a
 		LIBPOSIX?=	${DESTDIR}/usr/lib/libposix.a
 		LIBPTHREAD?=	${DESTDIR}/usr/lib/libpthread.a
-		LIBPTHREAD_DBG?=${DESTDIR}/usr/lib/libpthread_dbg.a
 		LIBPUFFS?=	${DESTDIR}/usr/lib/libpuffs.a
 		LIBQUOTA?=	${DESTDIR}/usr/lib/libquota.a
 		LIBRADIUS?=	${DESTDIR}/usr/lib/libradius.a

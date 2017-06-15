@@ -31,7 +31,7 @@
 
 ******************************************************************************/
 /*$FreeBSD: head/sys/dev/ixgbe/ixgbe_type.h 299200 2016-05-06 22:54:56Z pfg $*/
-/*$NetBSD: ixgbe_type.h,v 1.18 2017/01/19 06:56:33 msaitoh Exp $*/
+/*$NetBSD: ixgbe_type.h,v 1.22 2017/06/02 08:16:52 msaitoh Exp $*/
 
 #ifndef _IXGBE_TYPE_H_
 #define _IXGBE_TYPE_H_
@@ -896,6 +896,7 @@ struct ixgbe_dmac_config {
 #define IXGBE_ILLERRC	0x04004
 #define IXGBE_ERRBC	0x04008
 #define IXGBE_MSPDC	0x04010
+#define IXGBE_MBSDC	0x04018	/* Bad SFD Count */
 #define IXGBE_MPC(_i)	(0x03FA0 + ((_i) * 4)) /* 8 of these 3FA0-3FBC*/
 #define IXGBE_MLFC	0x04034
 #define IXGBE_MRFC	0x04038
@@ -2220,11 +2221,17 @@ enum {
 #define IXGBE_FW_PTR			0x0F
 #define IXGBE_PBANUM0_PTR		0x15
 #define IXGBE_PBANUM1_PTR		0x16
+#define IXGBE_NVM_IMAGE_VER		0x18
+#define IXGBE_PHYFW_REV			0x19
 #define IXGBE_ALT_MAC_ADDR_PTR		0x37
 #define IXGBE_FREE_SPACE_PTR		0X3E
 
 #define IXGBE_SAN_MAC_ADDR_PTR		0x28
+#define IXGBE_NVM_MAP_VER		0x29
+#define IXGBE_OEM_NVM_IMAGE_VER		0x2A
 #define IXGBE_DEVICE_CAPS		0x2C
+#define IXGBE_ETRACKID_L		0x2D
+#define IXGBE_ETRACKID_H		0x2E
 #define IXGBE_SERIAL_NUMBER_MAC_ADDR	0x11
 #define IXGBE_PCIE_MSIX_82599_CAPS	0x72
 #define IXGBE_MAX_MSIX_VECTORS_82599	0x40
@@ -3566,6 +3573,7 @@ struct ixgbe_hw_stats {
 	struct evcnt illerrc;
 	struct evcnt errbc;
 	struct evcnt mspdc;
+	struct evcnt mbsdc;
 	struct evcnt mpctotal;
 	struct evcnt mpc[8];
 	struct evcnt mlfc;
@@ -3591,7 +3599,7 @@ struct ixgbe_hw_stats {
 	struct evcnt gptc;
 	struct evcnt gorc;
 	struct evcnt gotc;
-	u64 rnbc[8];
+	struct evcnt rnbc[8];
 	struct evcnt ruc;
 	struct evcnt rfc;
 	struct evcnt roc;

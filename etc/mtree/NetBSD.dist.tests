@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.tests,v 1.139 2017/01/02 20:37:12 martin Exp $
+#	$NetBSD: NetBSD.dist.tests,v 1.147 2017/05/27 21:02:55 bouyer Exp $
 
 ./usr/libdata/debug/usr/tests
 ./usr/libdata/debug/usr/tests/atf
@@ -46,9 +46,6 @@
 ./usr/libdata/debug/usr/tests/include/sys
 ./usr/libdata/debug/usr/tests/ipf
 ./usr/libdata/debug/usr/tests/kernel
-./usr/libdata/debug/usr/tests/kernel/arch
-./usr/libdata/debug/usr/tests/kernel/arch/amd64
-./usr/libdata/debug/usr/tests/kernel/arch/i386
 ./usr/libdata/debug/usr/tests/kernel/kqueue
 ./usr/libdata/debug/usr/tests/kernel/kqueue/read
 ./usr/libdata/debug/usr/tests/kernel/kqueue/write
@@ -81,7 +78,6 @@
 ./usr/libdata/debug/usr/tests/lib/libc/c063
 ./usr/libdata/debug/usr/tests/lib/libc/db
 ./usr/libdata/debug/usr/tests/lib/libc/gen
-./usr/libdata/debug/usr/tests/lib/libc/gen/exect
 ./usr/libdata/debug/usr/tests/lib/libc/gen/execve
 ./usr/libdata/debug/usr/tests/lib/libc/gen/posix_spawn
 ./usr/libdata/debug/usr/tests/lib/libc/hash
@@ -140,6 +136,7 @@
 ./usr/libdata/debug/usr/tests/net/bpf
 ./usr/libdata/debug/usr/tests/net/bpfilter
 ./usr/libdata/debug/usr/tests/net/bpfjit
+./usr/libdata/debug/usr/tests/net/can
 ./usr/libdata/debug/usr/tests/net/carp
 ./usr/libdata/debug/usr/tests/net/fdpass
 ./usr/libdata/debug/usr/tests/net/icmp
@@ -230,9 +227,6 @@
 ./usr/tests/ipf/input
 ./usr/tests/ipf/regress
 ./usr/tests/kernel
-./usr/tests/kernel/arch
-./usr/tests/kernel/arch/amd64
-./usr/tests/kernel/arch/i386
 ./usr/tests/kernel/kqueue
 ./usr/tests/kernel/kqueue/read
 ./usr/tests/kernel/kqueue/write
@@ -265,7 +259,6 @@
 ./usr/tests/lib/libc/c063
 ./usr/tests/lib/libc/db
 ./usr/tests/lib/libc/gen
-./usr/tests/lib/libc/gen/exect
 ./usr/tests/lib/libc/gen/execve
 ./usr/tests/lib/libc/gen/posix_spawn
 ./usr/tests/lib/libc/hash
@@ -333,18 +326,21 @@
 ./usr/tests/net/bpf
 ./usr/tests/net/bpfilter
 ./usr/tests/net/bpfjit
+./usr/tests/net/can
 ./usr/tests/net/carp
 ./usr/tests/net/fdpass
 ./usr/tests/net/icmp
 ./usr/tests/net/if
 ./usr/tests/net/if_bridge
 ./usr/tests/net/if_gif
+./usr/tests/net/if_l2tp
 ./usr/tests/net/if_loop
 ./usr/tests/net/if_pppoe
 ./usr/tests/net/if_tap
 ./usr/tests/net/if_tun
 ./usr/tests/net/if_vlan
 ./usr/tests/net/in_cksum
+./usr/tests/net/ipsec
 ./usr/tests/net/mcast
 ./usr/tests/net/mpls
 ./usr/tests/net/net
@@ -382,6 +378,7 @@
 ./usr/tests/usr.bin/awk
 ./usr/tests/usr.bin/basename
 ./usr/tests/usr.bin/bzip2
+./usr/tests/usr.bin/c++
 ./usr/tests/usr.bin/cc
 ./usr/tests/usr.bin/cmp
 ./usr/tests/usr.bin/config
@@ -408,6 +405,7 @@
 ./usr/tests/usr.bin/mixerctl
 ./usr/tests/usr.bin/mkdep
 ./usr/tests/usr.bin/nbperf
+./usr/tests/usr.bin/pkill
 ./usr/tests/usr.bin/pr
 ./usr/tests/usr.bin/rump_server
 ./usr/tests/usr.bin/sdiff

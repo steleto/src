@@ -1,4 +1,4 @@
-#	$NetBSD: t_ndp.sh,v 1.17 2016/11/25 08:51:17 ozaki-r Exp $
+#	$NetBSD: t_ndp.sh,v 1.19 2017/05/26 01:14:38 ozaki-r Exp $
 #
 # Copyright (c) 2015 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -30,7 +30,7 @@ SOCKDST=unix://commsock2
 IP6SRC=fc00::1
 IP6DST=fc00::2
 
-DEBUG=${DEBUG:-true}
+DEBUG=${DEBUG:-false}
 TIMEOUT=1
 
 atf_test_case ndp_cache_expiration cleanup
@@ -137,7 +137,7 @@ ndp_cache_expiration_body()
 	$DEBUG && rump.ndp -n -a
 	atf_check -s exit:0 -o match:'permanent' rump.ndp -n $IP6SRC
 	# Expired but remains until GC sweaps it (1 day)
-	atf_check -s exit:0 -o match:'(1d0h0m|23h59m)' rump.ndp -n $IP6DST
+	atf_check -s exit:0 -o match:"$ONEDAYISH" rump.ndp -n $IP6DST
 
 	rump_server_destroy_ifaces
 }

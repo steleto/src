@@ -1,4 +1,4 @@
-/*	$NetBSD: misc.c,v 1.15 2011/10/16 17:12:11 joerg Exp $	*/
+/*	$NetBSD: misc.c,v 1.17 2017/05/03 00:41:34 christos Exp $	*/
 
 /*
  * Miscellaneous functions
@@ -6,7 +6,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: misc.c,v 1.15 2011/10/16 17:12:11 joerg Exp $");
+__RCSID("$NetBSD: misc.c,v 1.17 2017/05/03 00:41:34 christos Exp $");
 #endif
 
 
@@ -631,46 +631,50 @@ do_gmatch(s, se, p, pe, isfile)
 	const unsigned char *se, *pe;
 	int isfile;
 {
-	register int sc, pc;
+	int sc, pc;
 	const unsigned char *prest, *psub, *pnext;
 	const unsigned char *srest;
+	const unsigned char *sNext, *pNext, *sStart;
 
 	if (s == NULL || p == NULL)
 		return 0;
-	while (p < pe) {
-		pc = *p++;
+	sNext = sStart = s;
+	pNext = p;
+	while (p < pe || s < se) {
+		pc = *p;
 		sc = s < se ? *s : '\0';
-		s++;
 		if (isfile) {
 			sc = FILECHCONV((unsigned char)sc);
 			pc = FILECHCONV((unsigned char)pc);
 		}
 		if (!ISMAGIC(pc)) {
 			if (sc != pc)
-				return 0;
+				goto backtrack;
+			p++;
+			s++;
 			continue;
-		}
-		switch (*p++) {
+		} else
+			pc = *++p;
+		switch (pc) {
 		  case '[':
+			p++;
+			s++;
 			if (sc == 0 || (p = cclass(p, sc)) == NULL)
-				return 0;
-			break;
+				break;
+			continue;
 
 		  case '?':
 			if (sc == 0)
-				return 0;
-			break;
+				break;
+			p++;
+			s++;
+			continue;
 
 		  case '*':
-			if (p == pe)
-				return 1;
-			s--;
-			do {
-				if (do_gmatch(s, se, p, pe, isfile))
-					return 1;
-			} while (s++ < se);
-			return 0;
-
+			pNext = p - 1;
+			sNext = s + 1;
+			p++;
+			continue;
 		  /*
 		   * [*+?@!](pattern|pattern|..)
 		   *
@@ -678,9 +682,8 @@ do_gmatch(s, se, p, pe, isfile)
 		   */
 		  case 0x80|'+': /* matches one or more times */
 		  case 0x80|'*': /* matches zero or more times */
-			if (!(prest = pat_scan(p, pe, 0)))
+			if (!(prest = pat_scan(++p, pe, 0)))
 				return 0;
-			s--;
 			/* take care of zero matches */
 			if (p[-1] == (0x80 | '*')
 			    && do_gmatch(s, se, prest, pe, isfile))
@@ -705,9 +708,8 @@ do_gmatch(s, se, p, pe, isfile)
 		  case 0x80|'?': /* matches zero or once */
 		  case 0x80|'@': /* matches one of the patterns */
 		  case 0x80|' ': /* simile for @ */
-			if (!(prest = pat_scan(p, pe, 0)))
+			if (!(prest = pat_scan(++p, pe, 0)))
 				return 0;
-			s--;
 			/* Take care of zero matches */
 			if (p[-1] == (0x80 | '?')
 			    && do_gmatch(s, se, prest, pe, isfile))
@@ -728,9 +730,8 @@ do_gmatch(s, se, p, pe, isfile)
 			return 0;
 
 		  case 0x80|'!': /* matches none of the patterns */
-			if (!(prest = pat_scan(p, pe, 0)))
+			if (!(prest = pat_scan(++p, pe, 0)))
 				return 0;
-			s--;
 			for (srest = s; srest <= se; srest++) {
 				int matched = 0;
 
@@ -752,12 +753,20 @@ do_gmatch(s, se, p, pe, isfile)
 			return 0;
 
 		  default:
-			if (sc != p[-1])
-				return 0;
-			break;
+			if (sc != pc)
+				break;
+			p++;
+			s++;
+			continue;
 		}
+backtrack:	if (sNext != sStart && sNext <= se) {
+			p = pNext;
+			s = sNext;
+			continue;
+		}
+		return 0;
 	}
-	return s == se;
+	return 1;
 }
 
 static const unsigned char *

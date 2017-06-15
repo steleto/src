@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_input.c,v 1.173 2017/01/16 15:44:47 christos Exp $	*/
+/*	$NetBSD: ip6_input.c,v 1.178 2017/06/01 02:45:14 chs Exp $	*/
 /*	$KAME: ip6_input.c,v 1.188 2001/03/29 05:34:31 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.173 2017/01/16 15:44:47 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.178 2017/06/01 02:45:14 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -75,7 +75,6 @@ __KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.173 2017/01/16 15:44:47 christos Exp
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/domain.h>
 #include <sys/protosw.h>
@@ -206,10 +205,7 @@ ip6_init(void)
 	KASSERT(inet6_pfil_hook != NULL);
 
 	ip6stat_percpu = percpu_alloc(sizeof(uint64_t) * IP6_NSTATS);
-
 	ip6_forward_rt_percpu = percpu_alloc(sizeof(struct route));
-	if (ip6_forward_rt_percpu == NULL)
-		panic("failed to alllocate ip6_forward_rt_percpu");
 }
 
 static void
@@ -459,15 +455,15 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	 * Multicast check
 	 */
 	if (IN6_IS_ADDR_MULTICAST(&ip6->ip6_dst)) {
-	  	struct	in6_multi *in6m = 0;
+		bool ingroup;
 
 		in6_ifstat_inc(rcvif, ifs6_in_mcast);
 		/*
 		 * See if we belong to the destination multicast group on the
 		 * arrival interface.
 		 */
-		IN6_LOOKUP_MULTI(ip6->ip6_dst, rcvif, in6m);
-		if (in6m)
+		ingroup = in6_multi_group(&ip6->ip6_dst, rcvif);
+		if (ingroup)
 			ours = 1;
 		else if (!ip6_mrouter) {
 			uint64_t *ip6s = IP6_STAT_GETREF();
@@ -1323,10 +1319,7 @@ ip6_notify_pmtu(struct in6pcb *in6p, const struct sockaddr_in6 *dst,
 	if (mtu == NULL)
 		return;
 
-#ifdef DIAGNOSTIC
-	if (so == NULL)		/* I believe this is impossible */
-		panic("ip6_notify_pmtu: socket is NULL");
-#endif
+	KASSERT(so != NULL);
 
 	memset(&mtuctl, 0, sizeof(mtuctl));	/* zero-clear for safety */
 	mtuctl.ip6m_mtu = *mtu;

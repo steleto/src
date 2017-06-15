@@ -1,4 +1,4 @@
-/*	$NetBSD: vnode_impl.h,v 1.11 2017/01/11 09:08:59 hannken Exp $	*/
+/*	$NetBSD: vnode_impl.h,v 1.15 2017/06/04 08:02:26 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2016 The NetBSD Foundation, Inc.
@@ -37,9 +37,10 @@
 struct namecache;
 
 enum vnode_state {
+	VS_ACTIVE,	/* Assert only, fs node attached and usecount > 0. */
 	VS_MARKER,	/* Stable, used as marker. Will not change. */
 	VS_LOADING,	/* Intermediate, initialising the fs node. */
-	VS_ACTIVE,	/* Stable, valid fs node attached. */
+	VS_LOADED,	/* Stable, valid fs node attached. */
 	VS_BLOCKED,	/* Intermediate, active, no new references allowed. */
 	VS_RECLAIMING,	/* Intermediate, detaching the fs node. */
 	VS_RECLAIMED	/* Stable, no fs node attached. */
@@ -81,8 +82,33 @@ struct vnode_impl {
 };
 typedef struct vnode_impl vnode_impl_t;
 
-#define VIMPL_TO_VNODE(vip)	((vnode_t *)(vip))
-#define VNODE_TO_VIMPL(vp)	((vnode_impl_t *)(vp))
+#define VIMPL_TO_VNODE(vip)	(&(vip)->vi_vnode)
+#define VNODE_TO_VIMPL(vp)	container_of((vp), struct vnode_impl, vi_vnode)
+
+/*
+ * Vnode state assertion.
+ */
+void _vstate_assert(vnode_t *, enum vnode_state, const char *, int );
+
+#if defined(DIAGNOSTIC) 
+
+#define VSTATE_ASSERT(vp, state) \
+	do { \
+		_vstate_assert((vp), (state), __func__, __LINE__); \
+	} while (/*CONSTCOND*/ 0)
+#define VSTATE_ASSERT_UNLOCKED(vp, state) \
+	do { \
+		mutex_enter((vp)->v_interlock); \
+		_vstate_assert((vp), (state), __func__, __LINE__); \
+		mutex_exit((vp)->v_interlock); \
+	} while (/*CONSTCOND*/ 0)
+
+#else /* defined(DIAGNOSTIC) */
+
+#define VSTATE_ASSERT(vp, state)
+#define VSTATE_ASSERT_UNLOCKED(vp, state)
+
+#endif /* defined(DIAGNOSTIC) */
 
 /*
  * Vnode manipulation functions.

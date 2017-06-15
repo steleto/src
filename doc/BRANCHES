@@ -1,4 +1,4 @@
-#	$NetBSD: BRANCHES,v 1.337 2017/01/15 20:36:21 bouyer Exp $
+#	$NetBSD: BRANCHES,v 1.342 2017/06/04 07:17:09 snj Exp $
 #
 # This file contains a list of branches that exist in the NetBSD CVS
 # tree and their current state.
@@ -299,6 +299,29 @@ Maintainer:	7.0 Release Engineering <releng-7@NetBSD.org>
 Scope:		Entire tree. (src + xsrc)
 Notes:
 		Commits restricted to Release Engineering.
+
+Branch:		netbsd-7-1
+Description:	Tracking security/critical fixes for NetBSD 7.1
+Status:		Active
+Start Date:	15 Mar 2017
+End Date:
+Base Tag:	netbsd-7-1-RELEASE
+Maintainer:	NetBSD 7 Release Engineering <releng-7@NetBSD.org>
+Scope:		Entire tree. (src + xsrc)
+Notes:
+		Commits restricted to Release Engineering.
+
+Branch:		netbsd-8
+Description:	The NetBSD 8 release branch
+Status:		Active
+Start Date:	2017-06-04
+End Date:
+Base Tag:	netbsd-8-base
+Maintainer:	Release Engineering <releng@NetBSD.org>
+Scope:		Entire tree. (src + xsrc)
+Notes:
+		Commits restricted to Release Engineering.
+
 ########################################################################
 # Individual developers' branches (Active/Dormant):
 ########################################################################
@@ -385,9 +408,9 @@ Notes:		This code was on a branch because it involves changes to
 
 Branch:		bouyer-socketcan
 Description:	Implement a CAN socket layer compatible with linux SocketCAN
-Status:		Active
+Status:		Terminated
 Start Date:	Sun Jan 15 2017
-End Date:
+End Date:	May 27 2017
 Base Tag:	bouyer-socketcan-base
 Maintainer:	Manuel Bouyer <bouyer@NetBSD.org>
 Scope:		src/
@@ -865,21 +888,37 @@ Scope:		src/sys and src/common
 Notes:		Used as experiment sandbox and if successful hopefully one day
 		to be integrated.
 
-Branch:		pgoyette-localcount
+Branch:		prg-localcount2
 Description:	Implement localcount reference counting as proposed by
-		riastradh@
+		riastradh@ - supersedes abandonded pgoyette-localcount
 Status:		Active
-Start Date:	Fri Jul 15 2016
-End Date:
-Base Tag:	pgoyette-localcount-base
+Start Date:	Wed Apr 26 2017
+End Date:	
+Base Tag:	prg-localcount2-base
 Maintainer:	pgoyette
 Scope:		src/sys/
-Notes:
+Notes:		
 
 
 ########################################################################
 # Individual developers' branches (Terminated):
 ########################################################################
+
+Branch:		pgoyette-localcount
+Description:	Implement localcount reference counting as proposed by
+		riastradh@
+Status:		Terminated
+Start Date:	Fri Jul 15 2016
+End Date:	Wed Apr 26 2017
+Base Tag:	pgoyette-localcount-base
+Maintainer:	pgoyette
+Scope:		src/sys/
+Notes:		Abandoned - there seems to have been some CVS "pilot
+		error during one of the sync-with-head and now there
+		are an unknown number of commits missing from an
+		unknown number of files from an unknown time period.
+		The work will be salvaged as much as possible, and
+		applied to a new clean branch.
 
 Branch:		bouyer-scsipi
 Description:	Integration of atapi support

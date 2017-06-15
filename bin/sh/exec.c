@@ -1,4 +1,4 @@
-/*	$NetBSD: exec.c,v 1.46 2016/05/03 17:21:02 christos Exp $	*/
+/*	$NetBSD: exec.c,v 1.49 2017/06/07 05:08:32 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)exec.c	8.4 (Berkeley) 6/8/95";
 #else
-__RCSID("$NetBSD: exec.c,v 1.46 2016/05/03 17:21:02 christos Exp $");
+__RCSID("$NetBSD: exec.c,v 1.49 2017/06/07 05:08:32 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -91,6 +91,8 @@ struct tblentry {
 	union param param;	/* definition of builtin function */
 	short cmdtype;		/* index identifying command */
 	char rehash;		/* if set, cd done since entry created */
+	char fn_ln1;		/* for functions, LINENO from 1 */
+	int lineno;		/* for functions abs LINENO of definition */
 	char cmdname[ARB];	/* name of command */
 };
 
@@ -130,7 +132,7 @@ shellexec(char **argv, char **envp, const char *path, int idx, int vforked)
 		e = errno;
 	} else {
 		e = ENOENT;
-		while ((cmdname = padvance(&path, argv[0])) != NULL) {
+		while ((cmdname = padvance(&path, argv[0], 1)) != NULL) {
 			if (--idx < 0 && pathopt == NULL) {
 				tryexec(cmdname, argv, envp, vforked);
 				if (errno != ENOENT && errno != ENOTDIR)
@@ -296,7 +298,7 @@ break2:;
 const char *pathopt;
 
 char *
-padvance(const char **path, const char *name)
+padvance(const char **path, const char *name, int magic_percent)
 {
 	const char *p;
 	char *q;
@@ -305,8 +307,12 @@ padvance(const char **path, const char *name)
 
 	if (*path == NULL)
 		return NULL;
+	if (magic_percent)
+		magic_percent = '%';
+
 	start = *path;
-	for (p = start ; *p && *p != ':' && *p != '%' ; p++);
+	for (p = start ; *p && *p != ':' && *p != magic_percent ; p++)
+		;
 	len = p - start + strlen(name) + 2;	/* "2" is for '/' and '\0' */
 	while (stackblocksize() < len)
 		growstackblock();
@@ -314,13 +320,15 @@ padvance(const char **path, const char *name)
 	if (p != start) {
 		memcpy(q, start, p - start);
 		q += p - start;
-		*q++ = '/';
+		if (q[-1] != '/')
+			*q++ = '/';
 	}
 	strcpy(q, name);
 	pathopt = NULL;
-	if (*p == '%') {
+	if (*p == magic_percent) {
 		pathopt = ++p;
-		while (*p && *p != ':')  p++;
+		while (*p && *p != ':')
+			p++;
 	}
 	if (*p == ':')
 		*path = p + 1;
@@ -340,32 +348,82 @@ hashcmd(int argc, char **argv)
 	struct tblentry **pp;
 	struct tblentry *cmdp;
 	int c;
-	int verbose;
 	struct cmdentry entry;
 	char *name;
+	int allopt=0, bopt=0, fopt=0, ropt=0, sopt=0, uopt=0, verbose=0;
 
-	verbose = 0;
-	while ((c = nextopt("rv")) != '\0') {
-		if (c == 'r') {
-			clearcmdentry(0);
-		} else if (c == 'v') {
-			verbose++;
+	while ((c = nextopt("bcfrsuv")) != '\0')
+		switch (c) {
+		case 'b':	bopt = 1;	break;
+		case 'c':	uopt = 1;	break;	/* c == u */
+		case 'f':	fopt = 1;	break;
+		case 'r':	ropt = 1;	break;
+		case 's':	sopt = 1;	break;
+		case 'u':	uopt = 1;	break;
+		case 'v':	verbose = 1;	break;
 		}
-	}
+
+	if (ropt)
+		clearcmdentry(0);
+
+	if (bopt == 0 && fopt == 0 && sopt == 0 && uopt == 0)
+		allopt = bopt = fopt = sopt = uopt = 1;
+
 	if (*argptr == NULL) {
 		for (pp = cmdtable ; pp < &cmdtable[CMDTABLESIZE] ; pp++) {
 			for (cmdp = *pp ; cmdp ; cmdp = cmdp->next) {
-				if (verbose || cmdp->cmdtype == CMDNORMAL)
+				switch (cmdp->cmdtype) {
+				case CMDNORMAL:
+					if (!uopt)
+						continue;
+					break;
+				case CMDBUILTIN:
+					if (!bopt)
+						continue;
+					break;
+				case CMDSPLBLTIN:
+					if (!sopt)
+						continue;
+					break;
+				case CMDFUNCTION:
+					if (!fopt)
+						continue;
+					break;
+				default:	/* never happens */
+					continue;
+				}
+				if (!allopt || verbose ||
+				    cmdp->cmdtype == CMDNORMAL)
 					printentry(cmdp, verbose);
 			}
 		}
 		return 0;
 	}
-	while ((name = *argptr) != NULL) {
-		if ((cmdp = cmdlookup(name, 0)) != NULL
-		 && (cmdp->cmdtype == CMDNORMAL
-		     || (cmdp->cmdtype == CMDBUILTIN && builtinloc >= 0)))
-			delete_cmd_entry();
+
+	while ((name = *argptr++) != NULL) {
+		if ((cmdp = cmdlookup(name, 0)) != NULL) {
+			switch (cmdp->cmdtype) {
+			case CMDNORMAL:
+				if (!uopt)
+					continue;
+				delete_cmd_entry();
+				break;
+			case CMDBUILTIN:
+				if (!bopt)
+					continue;
+				if (builtinloc >= 0)
+					delete_cmd_entry();
+				break;
+			case CMDSPLBLTIN:
+				if (!sopt)
+					continue;
+				break;
+			case CMDFUNCTION:
+				if (!fopt)
+					continue;
+				break;
+			}
+		}
 		find_command(name, &entry, DO_ERR, pathval());
 		if (verbose) {
 			if (entry.cmdtype != CMDUNKNOWN) {	/* if no error msg */
@@ -375,11 +433,9 @@ hashcmd(int argc, char **argv)
 			}
 			flushall();
 		}
-		argptr++;
 	}
 	return 0;
 }
-
 
 STATIC void
 printentry(struct tblentry *cmdp, int verbose)
@@ -393,19 +449,27 @@ printentry(struct tblentry *cmdp, int verbose)
 		idx = cmdp->param.index;
 		path = pathval();
 		do {
-			name = padvance(&path, cmdp->cmdname);
+			name = padvance(&path, cmdp->cmdname, 1);
 			stunalloc(name);
 		} while (--idx >= 0);
+		if (verbose)
+			out1fmt("Command from PATH[%d]: ",
+			    cmdp->param.index);
 		out1str(name);
 		break;
 	case CMDSPLBLTIN:
-		out1fmt("special builtin %s", cmdp->cmdname);
-		break;
+		if (verbose)
+			out1str("special ");
+		/* FALLTHROUGH */
 	case CMDBUILTIN:
-		out1fmt("builtin %s", cmdp->cmdname);
+		if (verbose)
+			out1str("builtin ");
+		out1fmt("%s", cmdp->cmdname);
 		break;
 	case CMDFUNCTION:
-		out1fmt("function %s", cmdp->cmdname);
+		if (verbose)
+			out1str("function ");
+		out1fmt("%s", cmdp->cmdname);
 		if (verbose) {
 			struct procstat ps;
 			INTOFF;
@@ -417,7 +481,8 @@ printentry(struct tblentry *cmdp, int verbose)
 		}
 		break;
 	default:
-		error("internal error: %s cmdtype %d", cmdp->cmdname, cmdp->cmdtype);
+		error("internal error: %s cmdtype %d",
+		    cmdp->cmdname, cmdp->cmdtype);
 	}
 	if (cmdp->rehash)
 		out1c('*');
@@ -517,7 +582,7 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
 	e = ENOENT;
 	idx = -1;
 loop:
-	while ((fullname = padvance(&path, name)) != NULL) {
+	while ((fullname = padvance(&path, name, 1)) != NULL) {
 		stunalloc(fullname);
 		idx++;
 		if (pathopt) {
@@ -613,6 +678,8 @@ success:
 	if (cmdp) {
 		cmdp->rehash = 0;
 		entry->cmdtype = cmdp->cmdtype;
+		entry->lineno = cmdp->lineno;
+		entry->lno_frel = cmdp->fn_ln1;
 		entry->u = cmdp->param;
 	} else
 		entry->cmdtype = CMDUNKNOWN;
@@ -908,6 +975,8 @@ addcmdentry(char *name, struct cmdentry *entry)
 			freefunc(cmdp->param.func);
 		}
 		cmdp->cmdtype = entry->cmdtype;
+		cmdp->lineno = entry->lineno;
+		cmdp->fn_ln1 = entry->lno_frel;
 		cmdp->param = entry->u;
 	}
 	INTON;
@@ -919,12 +988,14 @@ addcmdentry(char *name, struct cmdentry *entry)
  */
 
 void
-defun(char *name, union node *func)
+defun(char *name, union node *func, int lineno)
 {
 	struct cmdentry entry;
 
 	INTOFF;
 	entry.cmdtype = CMDFUNCTION;
+	entry.lineno = lineno;
+	entry.lno_frel = fnline1;
 	entry.u.func = copyfunc(func);
 	addcmdentry(name, &entry);
 	INTON;
@@ -1018,7 +1089,7 @@ typecmd(int argc, char **argv)
 				char *name;
 				int j = entry.u.index;
 				do {
-					name = padvance(&path, arg);
+					name = padvance(&path, arg, 1);
 					stunalloc(name);
 				} while (--j >= 0);
 				if (!v_flag)

@@ -1,10 +1,10 @@
-/*	$NetBSD: usbdevs.h,v 1.719 2016/12/12 16:43:14 bouyer Exp $	*/
+/*	$NetBSD: usbdevs.h,v 1.727 2017/05/30 20:16:08 jnemeth Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	NetBSD: usbdevs,v 1.728 2016/12/12 16:41:08 bouyer Exp
+ *	NetBSD: usbdevs,v 1.736 2017/05/30 20:13:35 jnemeth Exp
  */
 
 /*
@@ -159,6 +159,7 @@
 #define	USB_VENDOR_ANNABOOKS	0x04ed		/* Annabooks */
 #define	USB_VENDOR_JVC	0x04f1		/* JVC */
 #define	USB_VENDOR_CHICONY	0x04f2		/* Chicony Electronics */
+#define	USB_VENDOR_ELAN	0x04f3		/* ELAN Microelectronics */
 #define	USB_VENDOR_BROTHER	0x04f9		/* Brother Industries */
 #define	USB_VENDOR_DALLAS	0x04fa		/* Dallas Semiconductor */
 #define	USB_VENDOR_AIPTEK2	0x04fc		/* AIPTEK International */
@@ -327,6 +328,7 @@
 #define	USB_VENDOR_CENTURY	0x07f7		/* CENTURY Corporation */
 #define	USB_VENDOR_BEWAN	0x07fa		/* Bewan */
 #define	USB_VENDOR_ZOOM	0x0803		/* Zoom Telephonics */
+#define	USB_VENDOR_SYNET	0x0812		/* Synet Electronics */
 #define	USB_VENDOR_BROADLOGIC	0x0827		/* BroadLogic */
 #define	USB_VENDOR_HANDSPRING	0x082d		/* Handspring */
 #define	USB_VENDOR_PALM	0x0830		/* Palm Computing */
@@ -490,6 +492,7 @@
 #define	USB_VENDOR_BELKIN2	0x1293		/* Belkin Components */
 #define	USB_VENDOR_CYBERTAN	0x129b		/* CyberTAN Technology */
 #define	USB_VENDOR_HUAWEI	0x12d1		/* Huawei Technologies */
+#define	USB_VENDOR_ARANEUS	0x12d8		/* Araneus Information Systems Oy */
 #define	USB_VENDOR_AINCOMM	0x12fd		/* Aincomm */
 #define	USB_VENDOR_MOBILITY	0x1342		/* Mobility */
 #define	USB_VENDOR_DICKSMITH	0x1371		/* Dick Smith Electronics */
@@ -558,6 +561,7 @@
 #define	USB_VENDOR_HAUPPAUGE2	0x2040		/* Hauppauge Computer Works */
 #define	USB_VENDOR_PARA	0x20b8		/* PARA Industrial */
 #define	USB_VENDOR_TRENDNET	0x20f4		/* TRENDnet */
+#define	USB_VENDOR_RTSYS	0x2100		/* RT Systems */
 #define	USB_VENDOR_DLINK3	0x2101		/* D-Link */
 #define	USB_VENDOR_VIALABS	0x2109		/* VIA Labs */
 #define	USB_VENDOR_ERICSSON	0x2282		/* Ericsson */
@@ -767,6 +771,9 @@
 #define	USB_PRODUCT_AGFA_SNAPSCANE26	0x2097		/* SnapScan e26 */
 #define	USB_PRODUCT_AGFA_SNAPSCANE52	0x20fd		/* SnapScan e52 */
 
+/* Araneus products */
+#define	USB_PRODUCT_ARANEUS_ALEA	0x0001		/* Alea I/II TRNG */
+
 /* Aincomm products */
 #define	USB_PRODUCT_AINCOMM_AWU2000B	0x1001		/* AWU2000B */
 
@@ -890,6 +897,7 @@
 #define	USB_PRODUCT_APPLE_BLUETOOTH_HOST_5	0x821f		/* Bluetooth USB Host Controller MacBookAir 4,1 */
 #define	USB_PRODUCT_APPLE_BLUETOOTH_HOST_6	0x8281		/* Bluetooth USB Host Controller MacMini 5,1 */
 #define	USB_PRODUCT_APPLE_BLUETOOTH_HOST_7	0x828f		/* Bluetooth USB Host Controller MacBookAir 6,1 */
+#define	USB_PRODUCT_APPLE_BLUETOOTH_HOST_8	0x821d		/* Bluetooth USB Host Controller MacBookPro 9,2 */
 #define	USB_PRODUCT_APPLE_BLUETOOTH	0x8300		/* Bluetooth */
 
 /* ArkMicroChips products */
@@ -1777,6 +1785,7 @@
 #define	USB_PRODUCT_HP_P1100	0x3102		/* Photosmart P1100 */
 #define	USB_PRODUCT_HP_V125W	0x3307		/* v125w */
 #define	USB_PRODUCT_HP_6127	0x3504		/* Deskjet 6127 */
+#define	USB_PRODUCT_HP_UN2430	0x371d		/* Sierra un2430 WWAN/GPS Module */
 #define	USB_PRODUCT_HP_HN210E	0x811c		/* Ethernet HN210E */
 
 /* HP products */
@@ -2823,6 +2832,9 @@
 #define	USB_PRODUCT_ROLAND_SONICCELL	0x00C2		/* SonicCell */
 #define	USB_PRODUCT_ROLAND_UMONE	0x012a		/* UM-ONE MIDI I/F */
 
+/* RT Systems products */
+#define	USB_PRODUCT_RTSYS_CT57A	0x9e51		/* CT57A Radio Cable */
+
 /* Sagem products */
 #define	USB_PRODUCT_SAGEM_XG760A	0x004a		/* XG-760A */
 #define	USB_PRODUCT_SAGEM_XG76NA	0x0062		/* XG-76NA */
@@ -3196,6 +3208,9 @@
 #define	USB_PRODUCT_SWEEX2_LW303	0x0302		/* LW303 */
 #define	USB_PRODUCT_SWEEX2_LW313	0x0313		/* LW313 */
 
+/* Synet Electronics products */
+#define	USB_PRODUCT_SYNET_MWP54SS	0x3101		/* MW-P54SS USB Wireless Broadband Router */
+
 /* System TALKS, Inc. */
 #define	USB_PRODUCT_SYSTEMTALKS_SGCX2UL	0x1920		/* SGC-X2UL */
 
@@ -3261,6 +3276,7 @@
 
 /* TP-Link products */
 #define	USB_PRODUCT_TPLINK_RTL8192CU	0x0100		/* RTL8192CU */
+#define	USB_PRODUCT_TPLINK_RTL8188EU	0x010c		/* RTL8188EU */
 
 /* Trek Technology products */
 #define	USB_PRODUCT_TREK_THUMBDRIVE	0x1111		/* ThumbDrive */

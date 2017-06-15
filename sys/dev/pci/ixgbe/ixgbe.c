@@ -59,10 +59,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 /*$FreeBSD: head/sys/dev/ixgbe/if_ix.c 302384 2016-07-07 03:39:18Z sbruno $*/
-/*$NetBSD: ixgbe.c,v 1.63 2017/01/19 09:42:08 msaitoh Exp $*/
+/*$NetBSD: ixgbe.c,v 1.89 2017/06/12 03:03:22 msaitoh Exp $*/
 
+#ifdef _KERNEL_OPT
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_net_mpsafe.h"
+#endif
 
 #include "ixgbe.h"
 #include "vlan.h"
@@ -195,6 +198,7 @@ static void	ixgbe_unregister_vlan(void *, struct ifnet *, u16);
 
 static void	ixgbe_add_device_sysctls(struct adapter *);
 static void     ixgbe_add_hw_stats(struct adapter *);
+static void	ixgbe_clear_evcnt(struct adapter *);
 static int	ixgbe_set_flowcntl(struct adapter *, int);
 static int	ixgbe_set_advertise(struct adapter *, int);
 
@@ -282,7 +286,7 @@ MODULE_DEPEND(ix, ether, 1, 1, 1);
 ** is varied over time based on the
 ** traffic for that interrupt vector
 */
-static int ixgbe_enable_aim = TRUE;
+static bool ixgbe_enable_aim = true;
 #define SYSCTL_INT(_a1, _a2, _a3, _a4, _a5, _a6, _a7)
 SYSCTL_INT(_hw_ix, OID_AUTO, enable_aim, CTLFLAG_RWTUN, &ixgbe_enable_aim, 0,
     "Enable adaptive interrupt moderation");
@@ -391,6 +395,15 @@ static int fdir_pballoc = 1;
 #include <dev/netmap/ixgbe_netmap.h>
 #endif /* DEV_NETMAP */
 
+#ifdef NET_MPSAFE
+#define IXGBE_MPSAFE		1
+#define IXGBE_CALLOUT_FLAGS	CALLOUT_MPSAFE
+#define IXGBE_SOFTINFT_FLAGS	SOFTINT_MPSAFE
+#else
+#define IXGBE_CALLOUT_FLAGS	0
+#define IXGBE_SOFTINFT_FLAGS	0
+#endif
+
 /*********************************************************************
  *  Device identification routine
  *
@@ -453,10 +466,12 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	struct adapter *adapter;
 	struct ixgbe_hw *hw;
 	int             error = -1;
-	u16		csum;
+	u16		csum, high, low, nvmreg;
+	u8		id;
 	u32		ctrl_ext;
 	ixgbe_vendor_info_t *ent;
 	struct pci_attach_args *pa = aux;
+	const char *str;
 
 	INIT_DEBUGOUT("ixgbe_attach: begin");
 
@@ -488,10 +503,44 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	IXGBE_CORE_LOCK_INIT(adapter, device_xname(dev));
 
 	/* Set up the timer callout */
-	callout_init(&adapter->timer, 0);
+	callout_init(&adapter->timer, IXGBE_CALLOUT_FLAGS);
 
 	/* Determine hardware revision */
 	ixgbe_identify_hardware(adapter);
+
+	switch (hw->mac.type) {
+	case ixgbe_mac_82598EB:
+		str = "82598EB";
+		break;
+	case ixgbe_mac_82599EB:
+		str = "82599EB";
+		break;
+	case ixgbe_mac_82599_vf:
+		str = "82599 VF";
+		break;
+	case ixgbe_mac_X540:
+		str = "X540";
+		break;
+	case ixgbe_mac_X540_vf:
+		str = "X540 VF";
+		break;
+	case ixgbe_mac_X550:
+		str = "X550";
+		break;
+	case ixgbe_mac_X550EM_x:
+		str = "X550EM";
+		break;
+	case ixgbe_mac_X550_vf:
+		str = "X550 VF";
+		break;
+	case ixgbe_mac_X550EM_x_vf:
+		str = "X550EM X VF";
+		break;
+	default:
+		str = "Unknown";
+		break;
+	}
+	aprint_normal_dev(dev, "device %s\n", str);
 
 	/* Do base PCI setup - map BAR0 */
 	if (ixgbe_allocate_pci_resources(adapter, pa)) {
@@ -507,7 +556,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 
 	ixgbe_set_sysctl_value(adapter, "tx_processing_limit",
 	    "max number of tx packets to process",
-	&adapter->tx_process_limit, ixgbe_tx_process_limit);
+	    &adapter->tx_process_limit, ixgbe_tx_process_limit);
 
 	/* Do descriptor calc and sanity checks */
 	if (((ixgbe_txd * sizeof(union ixgbe_adv_tx_desc)) % DBA_ALIGN) != 0 ||
@@ -581,6 +630,76 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		error = EIO;
 		goto err_late;
 	}
+
+	aprint_normal("%s:", device_xname(dev));
+	/* NVM Image Version */
+	switch (hw->mac.type) {
+	case ixgbe_mac_X540:
+		hw->eeprom.ops.read(hw, IXGBE_NVM_IMAGE_VER, &nvmreg);
+		if (nvmreg == 0xffff)
+			break;
+		high = (nvmreg >> 12) & 0x0f;
+		low = (nvmreg >> 4) & 0xff;
+		id = nvmreg & 0x0f;
+		aprint_normal(" NVM Image Version %u.%u ID 0x%x,", high, low,
+		    id);
+		break;
+	case ixgbe_mac_X550EM_x:
+	case ixgbe_mac_X550:
+		hw->eeprom.ops.read(hw, IXGBE_NVM_IMAGE_VER, &nvmreg);
+		if (nvmreg == 0xffff)
+			break;
+		high = (nvmreg >> 12) & 0x0f;
+		low = nvmreg & 0xff;
+		aprint_normal(" NVM Image Version %u.%u,", high, low);
+		break;
+	default:
+		break;
+	}
+
+	/* PHY firmware revision */
+	switch (hw->mac.type) {
+	case ixgbe_mac_X540:
+	case ixgbe_mac_X550:
+		hw->eeprom.ops.read(hw, IXGBE_PHYFW_REV, &nvmreg);
+		if (nvmreg == 0xffff)
+			break;
+		high = (nvmreg >> 12) & 0x0f;
+		low = (nvmreg >> 4) & 0xff;
+		id = nvmreg & 0x000f;
+		aprint_normal(" PHY FW Revision %u.%u ID 0x%x,", high, low,
+		    id);
+		break;
+	default:
+		break;
+	}
+
+	/* NVM Map version & OEM NVM Image version */
+	switch (hw->mac.type) {
+	case ixgbe_mac_X550:
+	case ixgbe_mac_X550EM_x:
+		hw->eeprom.ops.read(hw, IXGBE_NVM_MAP_VER, &nvmreg);
+		if (nvmreg != 0xffff) {
+			high = (nvmreg >> 12) & 0x0f;
+			low = nvmreg & 0x00ff;
+			aprint_normal(" NVM Map version %u.%02x,", high, low);
+		}
+		hw->eeprom.ops.read(hw, IXGBE_OEM_NVM_IMAGE_VER, &nvmreg);
+		if (nvmreg == 0xffff) {
+			high = (nvmreg >> 12) & 0x0f;
+			low = nvmreg & 0x00ff;
+			aprint_verbose(" OEM NVM Image version %u.%02x,", high,
+			    low);
+		}
+		break;
+	default:
+		break;
+	}
+
+	/* Print the ETrackID */
+	hw->eeprom.ops.read(hw, IXGBE_ETRACKID_H, &high);
+	hw->eeprom.ops.read(hw, IXGBE_ETRACKID_L, &low);
+	aprint_normal(" ETrackID %08x\n", ((uint32_t)high << 16) | low);
 
 	error = ixgbe_init_hw(hw);
 	switch (error) {
@@ -710,16 +829,19 @@ static int
 ixgbe_detach(device_t dev, int flags)
 {
 	struct adapter *adapter = device_private(dev);
-	struct rx_ring *rxr = adapter->rx_rings;
-	struct ixgbe_hw_stats *stats = &adapter->stats.pf;
 	struct ix_queue *que = adapter->queues;
+	struct rx_ring *rxr = adapter->rx_rings;
 	struct tx_ring *txr = adapter->tx_rings;
+	struct ixgbe_hw *hw = &adapter->hw;
+	struct ixgbe_hw_stats *stats = &adapter->stats.pf;
 	u32	ctrl_ext;
 
 	INIT_DEBUGOUT("ixgbe_detach: begin");
 	if (adapter->osdep.attached == false)
 		return 0;
 
+	/* Stop the interface. Callouts are stopped in it. */
+	ixgbe_ifstop(adapter->ifp, 1);
 #if NVLAN > 0
 	/* Make sure VLANs are not using driver */
 	if (!VLAN_ATTACHED(&adapter->osdep.ec))
@@ -749,7 +871,7 @@ ixgbe_detach(device_t dev, int flags)
 
 	for (int i = 0; i < adapter->num_queues; i++, que++, txr++) {
 #ifndef IXGBE_LEGACY_TX
-		softint_disestablish(txr->txq_si);
+		softint_disestablish(txr->txr_si);
 #endif
 		softint_disestablish(que->que_si);
 	}
@@ -780,15 +902,13 @@ ixgbe_detach(device_t dev, int flags)
 	bus_generic_detach(dev);
 #endif
 	if_detach(adapter->ifp);
+	if_percpuq_destroy(adapter->ipq);
 
 	sysctl_teardown(&adapter->sysctllog);
 	evcnt_detach(&adapter->handleq);
 	evcnt_detach(&adapter->req);
-	evcnt_detach(&adapter->morerx);
-	evcnt_detach(&adapter->moretx);
-	evcnt_detach(&adapter->txloops);
 	evcnt_detach(&adapter->efbig_tx_dma_setup);
-	evcnt_detach(&adapter->m_defrag_failed);
+	evcnt_detach(&adapter->mbuf_defrag_failed);
 	evcnt_detach(&adapter->efbig2_tx_dma_setup);
 	evcnt_detach(&adapter->einval_tx_dma_setup);
 	evcnt_detach(&adapter->other_tx_dma_setup);
@@ -800,26 +920,32 @@ ixgbe_detach(device_t dev, int flags)
 
 	txr = adapter->tx_rings;
 	for (int i = 0; i < adapter->num_queues; i++, rxr++, txr++) {
+		evcnt_detach(&adapter->queues[i].irqs);
 		evcnt_detach(&txr->no_desc_avail);
 		evcnt_detach(&txr->total_packets);
 		evcnt_detach(&txr->tso_tx);
+#ifndef IXGBE_LEGACY_TX
+		evcnt_detach(&txr->pcq_drops);
+#endif
 
-		if (i < __arraycount(adapter->stats.pf.mpc)) {
-			evcnt_detach(&adapter->stats.pf.mpc[i]);
+		if (i < __arraycount(stats->mpc)) {
+			evcnt_detach(&stats->mpc[i]);
+			if (hw->mac.type == ixgbe_mac_82598EB)
+				evcnt_detach(&stats->rnbc[i]);
 		}
-		if (i < __arraycount(adapter->stats.pf.pxontxc)) {
-			evcnt_detach(&adapter->stats.pf.pxontxc[i]);
-			evcnt_detach(&adapter->stats.pf.pxonrxc[i]);
-			evcnt_detach(&adapter->stats.pf.pxofftxc[i]);
-			evcnt_detach(&adapter->stats.pf.pxoffrxc[i]);
-			evcnt_detach(&adapter->stats.pf.pxon2offc[i]);
+		if (i < __arraycount(stats->pxontxc)) {
+			evcnt_detach(&stats->pxontxc[i]);
+			evcnt_detach(&stats->pxonrxc[i]);
+			evcnt_detach(&stats->pxofftxc[i]);
+			evcnt_detach(&stats->pxoffrxc[i]);
+			evcnt_detach(&stats->pxon2offc[i]);
 		}
-		if (i < __arraycount(adapter->stats.pf.qprc)) {
-			evcnt_detach(&adapter->stats.pf.qprc[i]);
-			evcnt_detach(&adapter->stats.pf.qptc[i]);
-			evcnt_detach(&adapter->stats.pf.qbrc[i]);
-			evcnt_detach(&adapter->stats.pf.qbtc[i]);
-			evcnt_detach(&adapter->stats.pf.qprdc[i]);
+		if (i < __arraycount(stats->qprc)) {
+			evcnt_detach(&stats->qprc[i]);
+			evcnt_detach(&stats->qptc[i]);
+			evcnt_detach(&stats->qbrc[i]);
+			evcnt_detach(&stats->qbtc[i]);
+			evcnt_detach(&stats->qprdc[i]);
 		}
 
 		evcnt_detach(&rxr->rx_packets);
@@ -827,7 +953,6 @@ ixgbe_detach(device_t dev, int flags)
 		evcnt_detach(&rxr->rx_copies);
 		evcnt_detach(&rxr->no_jmbuf);
 		evcnt_detach(&rxr->rx_discarded);
-		evcnt_detach(&rxr->rx_irq);
 	}
 	evcnt_detach(&stats->ipcs);
 	evcnt_detach(&stats->l4cs);
@@ -839,6 +964,9 @@ ixgbe_detach(device_t dev, int flags)
 	evcnt_detach(&stats->illerrc);
 	evcnt_detach(&stats->errbc);
 	evcnt_detach(&stats->mspdc);
+	if (hw->mac.type >= ixgbe_mac_X550)
+		evcnt_detach(&stats->mbsdc);
+	evcnt_detach(&stats->mpctotal);
 	evcnt_detach(&stats->mlfc);
 	evcnt_detach(&stats->mrfc);
 	evcnt_detach(&stats->rlec);
@@ -865,6 +993,7 @@ ixgbe_detach(device_t dev, int flags)
 	evcnt_detach(&stats->roc);
 	evcnt_detach(&stats->rjc);
 	evcnt_detach(&stats->mngprc);
+	evcnt_detach(&stats->mngpdc);
 	evcnt_detach(&stats->xec);
 
 	/* Packet Transmission Stats */
@@ -1005,6 +1134,7 @@ static int
 ixgbe_ioctl(struct ifnet * ifp, u_long command, void *data)
 {
 	struct adapter	*adapter = ifp->if_softc;
+	struct ixgbe_hw *hw = &adapter->hw;
 	struct ifcapreq *ifcr = data;
 	struct ifreq	*ifr = data;
 	int             error = 0;
@@ -1030,6 +1160,40 @@ ixgbe_ioctl(struct ifnet * ifp, u_long command, void *data)
 	case SIOCSIFMTU:
 		IOCTL_DEBUGOUT("ioctl: SIOCSIFMTU (Set Interface MTU)");
 		break;
+#ifdef __NetBSD__
+	case SIOCINITIFADDR:
+		IOCTL_DEBUGOUT("ioctl: SIOCINITIFADDR");
+		break;
+	case SIOCGIFFLAGS:
+		IOCTL_DEBUGOUT("ioctl: SIOCGIFFLAGS");
+		break;
+	case SIOCGIFAFLAG_IN:
+		IOCTL_DEBUGOUT("ioctl: SIOCGIFAFLAG_IN");
+		break;
+	case SIOCGIFADDR:
+		IOCTL_DEBUGOUT("ioctl: SIOCGIFADDR");
+		break;
+	case SIOCGIFMTU:
+		IOCTL_DEBUGOUT("ioctl: SIOCGIFMTU (Get Interface MTU)");
+		break;
+	case SIOCGIFCAP:
+		IOCTL_DEBUGOUT("ioctl: SIOCGIFCAP (Get IF cap)");
+		break;
+	case SIOCGETHERCAP:
+		IOCTL_DEBUGOUT("ioctl: SIOCGETHERCAP (Get ethercap)");
+		break;
+	case SIOCGLIFADDR:
+		IOCTL_DEBUGOUT("ioctl: SIOCGLIFADDR (Get Interface addr)");
+		break;
+	case SIOCZIFDATA:
+		IOCTL_DEBUGOUT("ioctl: SIOCZIFDATA (Zero counter)");
+		hw->mac.ops.clear_hw_cntrs(hw);
+		ixgbe_clear_evcnt(adapter);
+		break;
+	case SIOCAIFADDR:
+		IOCTL_DEBUGOUT("ioctl: SIOCAIFADDR (add/chg IF alias)");
+		break;
+#endif
 	default:
 		IOCTL_DEBUGOUT1("ioctl: UNKNOWN (0x%X)", (int)command);
 		break;
@@ -1041,7 +1205,6 @@ ixgbe_ioctl(struct ifnet * ifp, u_long command, void *data)
 		return ifmedia_ioctl(ifp, ifr, &adapter->media, command);
 	case SIOCGI2C:
 	{
-		struct ixgbe_hw *hw = &adapter->hw;
 		struct ixgbe_i2c_req	i2c;
 		IOCTL_DEBUGOUT("ioctl: SIOCGI2C (Get I2C Data)");
 		error = copyin(ifr->ifr_data, &i2c, sizeof(i2c));
@@ -1505,7 +1668,7 @@ ixgbe_enable_queue(struct adapter *adapter, u32 vector)
 	}
 }
 
-__unused static inline void
+static inline void
 ixgbe_disable_queue(struct adapter *adapter, u32 vector)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
@@ -1540,12 +1703,13 @@ ixgbe_handle_que(void *context)
 		IXGBE_TX_LOCK(txr);
 		ixgbe_txeof(txr);
 #ifndef IXGBE_LEGACY_TX
-		if (!drbr_empty(ifp, txr->br))
+		if (pcq_peek(txr->txr_interq) != NULL)
 			ixgbe_mq_start_locked(ifp, txr);
-#else
-		if (!IFQ_IS_EMPTY(&ifp->if_snd))
-			ixgbe_start_locked(txr, ifp);
 #endif
+		/* Only for queue 0 */
+		if ((&adapter->queues[0] == que)
+		    && (!IFQ_IS_EMPTY(&ifp->if_snd)))
+			ixgbe_start_locked(txr, ifp);
 		IXGBE_TX_UNLOCK(txr);
 	}
 
@@ -1597,13 +1761,6 @@ ixgbe_legacy_irq(void *arg)
 
 		IXGBE_TX_LOCK(txr);
 		ixgbe_txeof(txr);
-#ifdef IXGBE_LEGACY_TX
-		if (!IFQ_IS_EMPTY(&ifp->if_snd))
-			ixgbe_start_locked(txr, ifp);
-#else
-		if (!drbr_empty(ifp, txr->br))
-			ixgbe_mq_start_locked(ifp, txr);
-#endif
 		IXGBE_TX_UNLOCK(txr);
 	}
 
@@ -1625,11 +1782,7 @@ ixgbe_legacy_irq(void *arg)
 		softint_schedule(adapter->phy_si);
 
 	if (more)
-#ifndef IXGBE_LEGACY_TX
-		softint_schedule(txr->txq_si);
-#else
 		softint_schedule(que->que_si);
-#endif
 	else
 		ixgbe_enable_intr(adapter);
 	return 1;
@@ -1652,7 +1805,6 @@ ixgbe_msix_que(void *arg)
 	bool		more;
 	u32		newitr = 0;
 
-
 	/* Protect against spurious interrupts */
 	if ((ifp->if_flags & IFF_RUNNING) == 0)
 		return 0;
@@ -1669,18 +1821,11 @@ ixgbe_msix_que(void *arg)
 
 	IXGBE_TX_LOCK(txr);
 	ixgbe_txeof(txr);
-#ifdef IXGBE_LEGACY_TX
-	if (!IFQ_IS_EMPTY(&adapter->ifp->if_snd))
-		ixgbe_start_locked(txr, ifp);
-#else
-	if (!drbr_empty(ifp, txr->br))
-		ixgbe_mq_start_locked(ifp, txr);
-#endif
 	IXGBE_TX_UNLOCK(txr);
 
 	/* Do AIM now? */
 
-	if (adapter->enable_aim == FALSE)
+	if (adapter->enable_aim == false)
 		goto no_calc;
 	/*
 	** Do Adaptive Interrupt Moderation:
@@ -1799,12 +1944,12 @@ ixgbe_msix_link(void *arg)
 		mod_mask = IXGBE_EICR_GPI_SDP2_BY_MAC(hw);
 
 	if (ixgbe_is_sfp(hw)) {
-		if (reg_eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw)) {
-			IXGBE_WRITE_REG(hw, IXGBE_EICR, IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
-			softint_schedule(adapter->msf_si);
-		} else if (reg_eicr & mod_mask) {
+		if (reg_eicr & mod_mask) {
 			IXGBE_WRITE_REG(hw, IXGBE_EICR, mod_mask);
 			softint_schedule(adapter->mod_si);
+		} else if (reg_eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw)) {
+			IXGBE_WRITE_REG(hw, IXGBE_EICR, IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
+			softint_schedule(adapter->msf_si);
 		}
 	}
 
@@ -1851,6 +1996,7 @@ ixgbe_media_status(struct ifnet * ifp, struct ifmediareq * ifmr)
 	ifmr->ifm_active = IFM_ETHER;
 
 	if (!adapter->link_active) {
+		ifmr->ifm_active |= IFM_NONE;
 		IXGBE_CORE_UNLOCK(adapter);
 		return;
 	}
@@ -1917,37 +2063,14 @@ ixgbe_media_status(struct ifnet * ifp, struct ifmediareq * ifmr)
 	** XXX: These need to use the proper media types once
 	** they're added.
 	*/
+	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR)
+		switch (adapter->link_speed) {
+		case IXGBE_LINK_SPEED_10GB_FULL:
 #ifndef IFM_ETH_XTYPE
-	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR)
-		switch (adapter->link_speed) {
-		case IXGBE_LINK_SPEED_10GB_FULL:
 			ifmr->ifm_active |= IFM_10G_SR | IFM_FDX;
-			break;
-		case IXGBE_LINK_SPEED_2_5GB_FULL:
-			ifmr->ifm_active |= IFM_2500_SX | IFM_FDX;
-			break;
-		case IXGBE_LINK_SPEED_1GB_FULL:
-			ifmr->ifm_active |= IFM_1000_CX | IFM_FDX;
-			break;
-		}
-	else if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KX4
-	    || layer & IXGBE_PHYSICAL_LAYER_1000BASE_KX)
-		switch (adapter->link_speed) {
-		case IXGBE_LINK_SPEED_10GB_FULL:
-			ifmr->ifm_active |= IFM_10G_CX4 | IFM_FDX;
-			break;
-		case IXGBE_LINK_SPEED_2_5GB_FULL:
-			ifmr->ifm_active |= IFM_2500_SX | IFM_FDX;
-			break;
-		case IXGBE_LINK_SPEED_1GB_FULL:
-			ifmr->ifm_active |= IFM_1000_CX | IFM_FDX;
-			break;
-		}
 #else
-	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR)
-		switch (adapter->link_speed) {
-		case IXGBE_LINK_SPEED_10GB_FULL:
 			ifmr->ifm_active |= IFM_10G_KR | IFM_FDX;
+#endif
 			break;
 		case IXGBE_LINK_SPEED_2_5GB_FULL:
 			ifmr->ifm_active |= IFM_2500_KX | IFM_FDX;
@@ -1960,7 +2083,11 @@ ixgbe_media_status(struct ifnet * ifp, struct ifmediareq * ifmr)
 	    || layer & IXGBE_PHYSICAL_LAYER_1000BASE_KX)
 		switch (adapter->link_speed) {
 		case IXGBE_LINK_SPEED_10GB_FULL:
+#ifndef IFM_ETH_XTYPE
+			ifmr->ifm_active |= IFM_10G_CX4 | IFM_FDX;
+#else
 			ifmr->ifm_active |= IFM_10G_KX4 | IFM_FDX;
+#endif
 			break;
 		case IXGBE_LINK_SPEED_2_5GB_FULL:
 			ifmr->ifm_active |= IFM_2500_KX | IFM_FDX;
@@ -1969,7 +2096,6 @@ ixgbe_media_status(struct ifnet * ifp, struct ifmediareq * ifmr)
 			ifmr->ifm_active |= IFM_1000_KX | IFM_FDX;
 			break;
 		}
-#endif
 	
 	/* If nothing is recognized... */
 #if 0
@@ -2309,13 +2435,41 @@ ixgbe_update_link_status(struct adapter *adapter)
 {
 	struct ifnet	*ifp = adapter->ifp;
 	device_t dev = adapter->dev;
+	struct ixgbe_hw *hw = &adapter->hw;
 
-	if (adapter->link_up){ 
+	if (adapter->link_up) {
 		if (adapter->link_active == FALSE) {
-			if (bootverbose)
-				device_printf(dev,"Link is up %d Gbps %s \n",
-				    ((adapter->link_speed == 128)? 10:1),
-				    "Full Duplex");
+			if (adapter->link_speed == IXGBE_LINK_SPEED_10GB_FULL){
+				/*
+				 *  Discard count for both MAC Local Fault and
+				 * Remote Fault because those registers are
+				 * valid only when the link speed is up and
+				 * 10Gbps.
+				 */
+				IXGBE_READ_REG(hw, IXGBE_MLFC);
+				IXGBE_READ_REG(hw, IXGBE_MRFC);
+			}
+
+			if (bootverbose) {
+				const char *bpsmsg;
+
+				switch (adapter->link_speed) {
+				case IXGBE_LINK_SPEED_10GB_FULL:
+					bpsmsg = "10 Gbps";
+					break;
+				case IXGBE_LINK_SPEED_1GB_FULL:
+					bpsmsg = "1 Gbps";
+					break;
+				case IXGBE_LINK_SPEED_100_FULL:
+					bpsmsg = "100 Mbps";
+					break;
+				default:
+					bpsmsg = "unknown speed";
+					break;
+				}
+				device_printf(dev,"Link is up %s %s \n",
+				    bpsmsg, "Full Duplex");
+			}
 			adapter->link_active = TRUE;
 			/* Update any Flow Control changes */
 			ixgbe_fc_enable(&adapter->hw);
@@ -2562,24 +2716,26 @@ alloc_retry:
 	 * processing contexts.
 	 */
 #ifndef IXGBE_LEGACY_TX
-	txr->txq_si = softint_establish(SOFTINT_NET, ixgbe_deferred_mq_start,
-	    txr);
+	txr->txr_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_deferred_mq_start, txr);
 #endif
-	que->que_si = softint_establish(SOFTINT_NET, ixgbe_handle_que, que);
+	que->que_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_que, que);
 
 	/* Tasklets for Link, SFP and Multispeed Fiber */
-	adapter->link_si =
-	    softint_establish(SOFTINT_NET, ixgbe_handle_link, adapter);
-	adapter->mod_si =
-	    softint_establish(SOFTINT_NET, ixgbe_handle_mod, adapter);
-	adapter->msf_si =
-	    softint_establish(SOFTINT_NET, ixgbe_handle_msf, adapter);
-	adapter->phy_si =
-	    softint_establish(SOFTINT_NET, ixgbe_handle_phy, adapter);
+	adapter->link_si = softint_establish(SOFTINT_NET |IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_link, adapter);
+	adapter->mod_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_mod, adapter);
+	adapter->msf_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_msf, adapter);
+	adapter->phy_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_phy, adapter);
 
 #ifdef IXGBE_FDIR
 	adapter->fdir_si =
-	    softint_establish(SOFTINT_NET, ixgbe_reinit_fdir, adapter);
+	    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+		ixgbe_reinit_fdir, adapter);
 #endif
 	if (que->que_si == NULL ||
 	    adapter->link_si == NULL ||
@@ -2655,12 +2811,12 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 
 	kcpuset_create(&affinity, false);
 	for (int i = 0; i < adapter->num_queues; i++, vector++, que++, txr++) {
-		snprintf(intr_xname, sizeof(intr_xname), "%s TX/RX",
-		    device_xname(dev));
+		snprintf(intr_xname, sizeof(intr_xname), "%s TXRX%d",
+		    device_xname(dev), i);
 		intrstr = pci_intr_string(pc, adapter->osdep.intrs[i], intrbuf,
 		    sizeof(intrbuf));
-#ifdef IXG_MPSAFE
-		pci_intr_setattr(pc, adapter->osdep.intrs[i], PCI_INTR_MPSAFE,
+#ifdef IXGBE_MPSAFE
+		pci_intr_setattr(pc, &adapter->osdep.intrs[i], PCI_INTR_MPSAFE,
 		    true);
 #endif
 		/* Set the handler function */
@@ -2707,21 +2863,23 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 #ifdef	RSS
 			aprintf_normal(
 			    ", bound RSS bucket %d to CPU %d",
-			    i, cpu_id);
+			    i, cpu_id % ncpu);
 #else
 			aprint_normal(
 			    ", bound queue %d to cpu %d",
-			    i, cpu_id);
+			    i, cpu_id % ncpu);
 #endif
 #endif /* IXGBE_DEBUG */
 		}
 		aprint_normal("\n");
 #ifndef IXGBE_LEGACY_TX
-		txr->txq_si = softint_establish(SOFTINT_NET,
+		txr->txr_si
+		    = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 		    ixgbe_deferred_mq_start, txr);
 #endif
-		que->que_si = softint_establish(SOFTINT_NET, ixgbe_handle_que,
-		    que);
+		que->que_si
+		    = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+			ixgbe_handle_que, que);
 		if (que->que_si == NULL) {
 			aprint_error_dev(dev,
 			    "could not establish software interrupt\n"); 
@@ -2733,7 +2891,7 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	snprintf(intr_xname, sizeof(intr_xname), "%s link", device_xname(dev));
 	intrstr = pci_intr_string(pc, adapter->osdep.intrs[vector], intrbuf,
 	    sizeof(intrbuf));
-#ifdef IXG_MPSAFE
+#ifdef IXGBE_MPSAFE
 	pci_intr_setattr(pc, &adapter->osdep.intrs[vector], PCI_INTR_MPSAFE,
 	    true);
 #endif
@@ -2755,26 +2913,26 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	aprint_normal_dev(dev,
 	    "for link, interrupting at %s", intrstr);
 	if (error == 0)
-		aprint_normal(", affinity to cpu %d\n", cpu_id);
+		aprint_normal(", affinity to cpu %d\n", cpu_id % ncpu);
 	else
 		aprint_normal("\n");
 
 	adapter->vector = vector;
 	/* Tasklets for Link, SFP and Multispeed Fiber */
-	adapter->link_si =
-	    softint_establish(SOFTINT_NET, ixgbe_handle_link, adapter);
-	adapter->mod_si =
-	    softint_establish(SOFTINT_NET, ixgbe_handle_mod, adapter);
-	adapter->msf_si =
-	    softint_establish(SOFTINT_NET, ixgbe_handle_msf, adapter);
+	adapter->link_si = softint_establish(SOFTINT_NET |IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_link, adapter);
+	adapter->mod_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_mod, adapter);
+	adapter->msf_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_msf, adapter);
 #ifdef PCI_IOV
 	TASK_INIT(&adapter->mbx_task, 0, ixgbe_handle_mbx, adapter);
 #endif
-	adapter->phy_si =
-	    softint_establish(SOFTINT_NET, ixgbe_handle_phy, adapter);
+	adapter->phy_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+		ixgbe_handle_phy, adapter);
 #ifdef IXGBE_FDIR
-	adapter->fdir_si =
-	    softint_establish(SOFTINT_NET, ixgbe_reinit_fdir, adapter);
+	adapter->fdir_si = softint_establish(SOFTINT_NET | XGBE_SOFTINFT_FLAGS,
+		ixgbe_reinit_fdir, adapter);
 #endif
 
 	kcpuset_destroy(affinity);
@@ -2960,6 +3118,9 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	ifp->if_stop = ixgbe_ifstop;
 	ifp->if_softc = adapter;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+#ifdef IXGBE_MPSAFE
+	ifp->if_extflags = IFEF_START_MPSAFE;
+#endif
 	ifp->if_ioctl = ixgbe_ioctl;
 #if __FreeBSD_version >= 1100045
 	/* TSO parameters */
@@ -2969,18 +3130,18 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 #endif
 #ifndef IXGBE_LEGACY_TX
 	ifp->if_transmit = ixgbe_mq_start;
-	ifp->if_qflush = ixgbe_qflush;
-#else
+#endif
 	ifp->if_start = ixgbe_start;
 	IFQ_SET_MAXLEN(&ifp->if_snd, adapter->num_tx_desc - 2);
-#if 0
-	ifp->if_snd.ifq_drv_maxlen = adapter->num_tx_desc - 2;
-#endif
 	IFQ_SET_READY(&ifp->if_snd);
-#endif
 
 	if_initialize(ifp);
+	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
+	/*
+	 * We use per TX queue softint, so if_deferred_start_init() isn't
+	 * used.
+	 */
 	if_register(ifp);
 	ether_set_ifflags_cb(ec, ixgbe_ifflags_cb);
 
@@ -3426,6 +3587,9 @@ ixgbe_initialize_receive_units(struct adapter *adapter)
 	for (i = 0; i < adapter->num_queues; i++, rxr++) {
 		u64 rdba = rxr->rxdma.dma_paddr;
 		int j = rxr->me;
+		u32 tqsmreg, reg;
+		int regnum = i / 4;	/* 1 register per 4 queues */
+		int regshift = i % 4;	/* 4 bits per 1 queue */
 
 		/* Setup the Base and Length of the Rx Descriptor Ring */
 		IXGBE_WRITE_REG(hw, IXGBE_RDBAL(j),
@@ -3440,6 +3604,26 @@ ixgbe_initialize_receive_units(struct adapter *adapter)
 		srrctl &= ~IXGBE_SRRCTL_BSIZEPKT_MASK;
 		srrctl |= bufsz;
 		srrctl |= IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF;
+
+		/* Set RQSMR (Receive Queue Statistic Mapping) register */
+		reg = IXGBE_READ_REG(hw, IXGBE_RQSMR(regnum));
+		reg &= ~(0x000000ff << (regshift * 8));
+		reg |= i << (regshift * 8);
+		IXGBE_WRITE_REG(hw, IXGBE_RQSMR(regnum), reg);
+
+		/*
+		 * Set RQSMR (Receive Queue Statistic Mapping) register.
+		 * Register location for queue 0...7 are different between
+		 * 82598 and newer.
+		 */
+		if (adapter->hw.mac.type == ixgbe_mac_82598EB)
+			tqsmreg = IXGBE_TQSMR(regnum);
+		else
+			tqsmreg = IXGBE_TQSM(regnum);
+		reg = IXGBE_READ_REG(hw, tqsmreg);
+		reg &= ~(0x000000ff << (regshift * 8));
+		reg |= i << (regshift * 8);
+		IXGBE_WRITE_REG(hw, tqsmreg, reg);
 
 		/*
 		 * Set DROP_EN iff we have no flow control and >1 queue.
@@ -3996,8 +4180,6 @@ ixgbe_handle_mod(void *context)
 		    "Setup failure - unsupported SFP+ module type.\n");
 		goto out;
 	}
-	if (hw->phy.multispeed_fiber)
-		softint_schedule(adapter->msf_si);
 out:
 	/* Update media type */
 	switch (hw->mac.ops.get_media_type(hw)) {
@@ -4015,6 +4197,14 @@ out:
 			break;
 	}
 
+	/* Adjust media types shown in ifconfig */
+	ifmedia_removeall(&adapter->media);
+	/* get_supported_phy_layer will call hw->phy.ops.identify_sfp() */
+	adapter->phy_layer = ixgbe_get_supported_physical_layer(hw);
+	ixgbe_add_media_types(adapter);
+	ifmedia_set(&adapter->media, IFM_ETHER | IFM_AUTO);
+
+	softint_schedule(adapter->msf_si);
 	IXGBE_CORE_UNLOCK(adapter);
 	return;
 }
@@ -4032,8 +4222,6 @@ ixgbe_handle_msf(void *context)
 	bool negotiate;
 
 	IXGBE_CORE_LOCK(adapter);
-	/* get_supported_phy_layer will call hw->phy.ops.identify_sfp() */
-	adapter->phy_layer = ixgbe_get_supported_physical_layer(hw);
 
 	autoneg = hw->phy.autoneg_advertised;
 	if ((!autoneg) && (hw->mac.ops.get_link_capabilities))
@@ -4043,9 +4231,6 @@ ixgbe_handle_msf(void *context)
 	if (hw->mac.ops.setup_link)
 		hw->mac.ops.setup_link(hw, autoneg, TRUE);
 
-	/* Adjust media types shown in ifconfig */
-	ifmedia_removeall(&adapter->media);
-	ixgbe_add_media_types(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
 	return;
 }
@@ -4228,6 +4413,8 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 	stats->illerrc.ev_count += IXGBE_READ_REG(hw, IXGBE_ILLERRC);
 	stats->errbc.ev_count += IXGBE_READ_REG(hw, IXGBE_ERRBC);
 	stats->mspdc.ev_count += IXGBE_READ_REG(hw, IXGBE_MSPDC);
+	if (hw->mac.type == ixgbe_mac_X550)
+		stats->mbsdc.ev_count += IXGBE_READ_REG(hw, IXGBE_MBSDC);
 
 	for (int i = 0; i < __arraycount(stats->qprc); i++) {
 		int j = i % adapter->num_queues;
@@ -4235,8 +4422,29 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 		stats->qptc[j].ev_count += IXGBE_READ_REG(hw, IXGBE_QPTC(i));
 		stats->qprdc[j].ev_count += IXGBE_READ_REG(hw, IXGBE_QPRDC(i));
 	}
-	stats->mlfc.ev_count += IXGBE_READ_REG(hw, IXGBE_MLFC);
-	stats->mrfc.ev_count += IXGBE_READ_REG(hw, IXGBE_MRFC);
+	for (int i = 0; i < __arraycount(stats->mpc); i++) {
+		uint32_t mp;
+		int j = i % adapter->num_queues;
+
+		mp = IXGBE_READ_REG(hw, IXGBE_MPC(i));
+		/* global total per queue */
+		stats->mpc[j].ev_count += mp;
+		/* running comprehensive total for stats display */
+		total_missed_rx += mp;
+
+		if (hw->mac.type == ixgbe_mac_82598EB)
+			stats->rnbc[j].ev_count
+			    += IXGBE_READ_REG(hw, IXGBE_RNBC(i));
+		
+	}
+	stats->mpctotal.ev_count += total_missed_rx;
+
+	/* Document says M[LR]FC are valid when link is up and 10Gbps */
+	if ((adapter->link_active == TRUE)
+	    && (adapter->link_speed == IXGBE_LINK_SPEED_10GB_FULL)) {
+		stats->mlfc.ev_count += IXGBE_READ_REG(hw, IXGBE_MLFC);
+		stats->mrfc.ev_count += IXGBE_READ_REG(hw, IXGBE_MRFC);
+	}
 	rlec = IXGBE_READ_REG(hw, IXGBE_RLEC);
 	stats->rlec.ev_count += rlec;
 
@@ -4417,7 +4625,7 @@ ixgbe_sysctl_interrupt_rate_handler(SYSCTLFN_ARGS)
 		rate = 0;
 	node.sysctl_data = &rate;
 	error = sysctl_lookup(SYSCTLFN_CALL(&node));
-	if (error)
+	if (error || newp == NULL)
 		return error;
 	reg &= ~0xfff; /* default, no limitation */
 	ixgbe_max_interrupt_rate = 0;
@@ -4491,13 +4699,10 @@ ixgbe_add_device_sysctls(struct adapter *adapter)
 	    ixgbe_sysctl_flowcntl, 0, (void *)adapter, 0, CTL_CREATE, CTL_EOL) != 0)
 		aprint_error_dev(dev, "could not create sysctl\n");
 
-	/* XXX This is an *instance* sysctl controlling a *global* variable.
-	 * XXX It's that way in the FreeBSD driver that this derives from.
-	 */
 	if (sysctl_createv(log, 0, &rnode, &cnode,
-	    CTLFLAG_READWRITE, CTLTYPE_INT,
+	    CTLFLAG_READWRITE, CTLTYPE_BOOL,
 	    "enable_aim", SYSCTL_DESCR("Interrupt Moderation"),
-	    NULL, 0, &ixgbe_enable_aim, 0, CTL_CREATE, CTL_EOL) != 0)
+	    NULL, 0, &adapter->enable_aim, 0, CTL_CREATE, CTL_EOL) != 0)
 		aprint_error_dev(dev, "could not create sysctl\n");
 
 	if (sysctl_createv(log, 0, &rnode, &cnode,
@@ -4629,14 +4834,13 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 	struct sysctllog **log = &adapter->sysctllog;
 	struct tx_ring *txr = adapter->tx_rings;
 	struct rx_ring *rxr = adapter->rx_rings;
+	struct ixgbe_hw *hw = &adapter->hw;
 	struct ixgbe_hw_stats *stats = &adapter->stats.pf;
+	const char *xname = device_xname(dev);
 
 	/* Driver Statistics */
 #if 0
 	/* These counters are not updated by the software */
-	SYSCTL_ADD_ULONG(ctx, child, OID_AUTO, "dropped",
-			CTLFLAG_RD, &adapter->dropped_pkts,
-			"Driver dropped packets");
 	SYSCTL_ADD_ULONG(ctx, child, OID_AUTO, "mbuf_header_failed",
 			CTLFLAG_RD, &adapter->mbuf_header_failed,
 			"???");
@@ -4648,40 +4852,34 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 			"???");
 #endif
 	evcnt_attach_dynamic(&adapter->handleq, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Handled queue in softint");
+	    NULL, xname, "Handled queue in softint");
 	evcnt_attach_dynamic(&adapter->req, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Requeued in softint");
-	evcnt_attach_dynamic(&adapter->morerx, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Interrupt handler more rx");
-	evcnt_attach_dynamic(&adapter->moretx, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Interrupt handler more tx");
-	evcnt_attach_dynamic(&adapter->txloops, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Interrupt handler tx loops");
+	    NULL, xname, "Requeued in softint");
 	evcnt_attach_dynamic(&adapter->efbig_tx_dma_setup, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Driver tx dma soft fail EFBIG");
-	evcnt_attach_dynamic(&adapter->m_defrag_failed, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "m_defrag() failed");
+	    NULL, xname, "Driver tx dma soft fail EFBIG");
+	evcnt_attach_dynamic(&adapter->mbuf_defrag_failed, EVCNT_TYPE_MISC,
+	    NULL, xname, "m_defrag() failed");
 	evcnt_attach_dynamic(&adapter->efbig2_tx_dma_setup, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Driver tx dma hard fail EFBIG");
+	    NULL, xname, "Driver tx dma hard fail EFBIG");
 	evcnt_attach_dynamic(&adapter->einval_tx_dma_setup, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Driver tx dma hard fail EINVAL");
+	    NULL, xname, "Driver tx dma hard fail EINVAL");
 	evcnt_attach_dynamic(&adapter->other_tx_dma_setup, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Driver tx dma hard fail other");
+	    NULL, xname, "Driver tx dma hard fail other");
 	evcnt_attach_dynamic(&adapter->eagain_tx_dma_setup, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Driver tx dma soft fail EAGAIN");
+	    NULL, xname, "Driver tx dma soft fail EAGAIN");
 	evcnt_attach_dynamic(&adapter->enomem_tx_dma_setup, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Driver tx dma soft fail ENOMEM");
+	    NULL, xname, "Driver tx dma soft fail ENOMEM");
 	evcnt_attach_dynamic(&adapter->watchdog_events, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Watchdog timeouts");
+	    NULL, xname, "Watchdog timeouts");
 	evcnt_attach_dynamic(&adapter->tso_err, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "TSO errors");
-	evcnt_attach_dynamic(&adapter->link_irq, EVCNT_TYPE_MISC,
-	    NULL, device_xname(dev), "Link MSIX IRQ Handled");
+	    NULL, xname, "TSO errors");
+	evcnt_attach_dynamic(&adapter->link_irq, EVCNT_TYPE_INTR,
+	    NULL, xname, "Link MSIX IRQ Handled");
 
 	for (int i = 0; i < adapter->num_queues; i++, rxr++, txr++) {
 		snprintf(adapter->queues[i].evnamebuf,
 		    sizeof(adapter->queues[i].evnamebuf), "%s q%d",
-		    device_xname(dev), i);
+		    xname, i);
 		snprintf(adapter->queues[i].namebuf,
 		    sizeof(adapter->queues[i].namebuf), "q%d", i);
 
@@ -4726,8 +4924,10 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 		    0, CTL_CREATE, CTL_EOL) != 0)
 			break;
 
+		evcnt_attach_dynamic(&adapter->queues[i].irqs, EVCNT_TYPE_INTR,
+		    NULL, adapter->queues[i].evnamebuf, "IRQs on queue");
 		evcnt_attach_dynamic(&txr->tso_tx, EVCNT_TYPE_MISC,
-		    NULL, device_xname(dev), "TSO");
+		    NULL, adapter->queues[i].evnamebuf, "TSO");
 		evcnt_attach_dynamic(&txr->no_desc_avail, EVCNT_TYPE_MISC,
 		    NULL, adapter->queues[i].evnamebuf,
 		    "Queue No Descriptor Available");
@@ -4735,9 +4935,9 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 		    NULL, adapter->queues[i].evnamebuf,
 		    "Queue Packets Transmitted");
 #ifndef IXGBE_LEGACY_TX
-		evcnt_attach_dynamic(&txr->br->br_drops, EVCNT_TYPE_MISC,
+		evcnt_attach_dynamic(&txr->pcq_drops, EVCNT_TYPE_MISC,
 		    NULL, adapter->queues[i].evnamebuf,
-		    "Packets dropped in buf_ring");
+		    "Packets dropped in pcq");
 #endif
 
 #ifdef LRO
@@ -4764,6 +4964,11 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 			evcnt_attach_dynamic(&stats->mpc[i],
 			    EVCNT_TYPE_MISC, NULL, adapter->queues[i].evnamebuf,
 			    "Missed Packet Count");
+			if (hw->mac.type == ixgbe_mac_82598EB)
+				evcnt_attach_dynamic(&stats->rnbc[i],
+				    EVCNT_TYPE_MISC, NULL,
+				    adapter->queues[i].evnamebuf,
+				    "Receive No Buffers");
 		}
 		if (i < __arraycount(stats->pxontxc)) {
 			evcnt_attach_dynamic(&stats->pxontxc[i],
@@ -4810,8 +5015,6 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 		    NULL, adapter->queues[i].evnamebuf, "Rx no jumbo mbuf");
 		evcnt_attach_dynamic(&rxr->rx_discarded, EVCNT_TYPE_MISC,
 		    NULL, adapter->queues[i].evnamebuf, "Rx discarded");
-		evcnt_attach_dynamic(&rxr->rx_irq, EVCNT_TYPE_MISC,
-		    NULL, adapter->queues[i].evnamebuf, "Rx interrupts");
 #ifdef LRO
 		SYSCTL_ADD_INT(ctx, queue_list, OID_AUTO, "lro_queued",
 				CTLFLAG_RD, &lro->lro_queued, 0,
@@ -4824,9 +5027,8 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 
 	/* MAC stats get the own sub node */
 
-
 	snprintf(stats->namebuf,
-	    sizeof(stats->namebuf), "%s MAC Statistics", device_xname(dev));
+	    sizeof(stats->namebuf), "%s MAC Statistics", xname);
 
 	evcnt_attach_dynamic(&stats->ipcs, EVCNT_TYPE_MISC, NULL,
 	    stats->namebuf, "rx csum offload - IP");
@@ -4848,6 +5050,11 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 	    stats->namebuf, "Byte Errors");
 	evcnt_attach_dynamic(&stats->mspdc, EVCNT_TYPE_MISC, NULL,
 	    stats->namebuf, "MAC Short Packets Discarded");
+	if (hw->mac.type >= ixgbe_mac_X550)
+		evcnt_attach_dynamic(&stats->mbsdc, EVCNT_TYPE_MISC, NULL,
+		    stats->namebuf, "Bad SFD");
+	evcnt_attach_dynamic(&stats->mpctotal, EVCNT_TYPE_MISC, NULL,
+	    stats->namebuf, "Total Packets Missed");
 	evcnt_attach_dynamic(&stats->mlfc, EVCNT_TYPE_MISC, NULL,
 	    stats->namebuf, "MAC Local Faults");
 	evcnt_attach_dynamic(&stats->mrfc, EVCNT_TYPE_MISC, NULL,
@@ -4898,6 +5105,8 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 	    stats->namebuf, "Received Jabber");
 	evcnt_attach_dynamic(&stats->mngprc, EVCNT_TYPE_MISC, NULL,
 	    stats->namebuf, "Management Packets Received");
+	evcnt_attach_dynamic(&stats->mngpdc, EVCNT_TYPE_MISC, NULL,
+	    stats->namebuf, "Management Packets Dropped");
 	evcnt_attach_dynamic(&stats->xec, EVCNT_TYPE_MISC, NULL,
 	    stats->namebuf, "Checksum Errors");
 
@@ -4926,6 +5135,119 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 	    stats->namebuf, "512-1023 byte frames transmitted");
 	evcnt_attach_dynamic(&stats->ptc1522, EVCNT_TYPE_MISC, NULL,
 	    stats->namebuf, "1024-1522 byte frames transmitted");
+}
+
+static void
+ixgbe_clear_evcnt(struct adapter *adapter)
+{
+	struct tx_ring *txr = adapter->tx_rings;
+	struct rx_ring *rxr = adapter->rx_rings;
+	struct ixgbe_hw *hw = &adapter->hw;
+	struct ixgbe_hw_stats *stats = &adapter->stats.pf;
+
+	adapter->handleq.ev_count = 0;
+	adapter->req.ev_count = 0;
+	adapter->efbig_tx_dma_setup.ev_count = 0;
+	adapter->mbuf_defrag_failed.ev_count = 0;
+	adapter->efbig2_tx_dma_setup.ev_count = 0;
+	adapter->einval_tx_dma_setup.ev_count = 0;
+	adapter->other_tx_dma_setup.ev_count = 0;
+	adapter->eagain_tx_dma_setup.ev_count = 0;
+	adapter->enomem_tx_dma_setup.ev_count = 0;
+	adapter->watchdog_events.ev_count = 0;
+	adapter->tso_err.ev_count = 0;
+	adapter->link_irq.ev_count = 0;
+
+	txr = adapter->tx_rings;
+	for (int i = 0; i < adapter->num_queues; i++, rxr++, txr++) {
+		adapter->queues[i].irqs.ev_count = 0;
+		txr->no_desc_avail.ev_count = 0;
+		txr->total_packets.ev_count = 0;
+		txr->tso_tx.ev_count = 0;
+#ifndef IXGBE_LEGACY_TX
+		txr->pcq_drops.ev_count = 0;
+#endif
+
+		if (i < __arraycount(stats->mpc)) {
+			stats->mpc[i].ev_count = 0;
+			if (hw->mac.type == ixgbe_mac_82598EB)
+				stats->rnbc[i].ev_count = 0;
+		}
+		if (i < __arraycount(stats->pxontxc)) {
+			stats->pxontxc[i].ev_count = 0;
+			stats->pxonrxc[i].ev_count = 0;
+			stats->pxofftxc[i].ev_count = 0;
+			stats->pxoffrxc[i].ev_count = 0;
+			stats->pxon2offc[i].ev_count = 0;
+		}
+		if (i < __arraycount(stats->qprc)) {
+			stats->qprc[i].ev_count = 0;
+			stats->qptc[i].ev_count = 0;
+			stats->qbrc[i].ev_count = 0;
+			stats->qbtc[i].ev_count = 0;
+			stats->qprdc[i].ev_count = 0;
+		}
+
+		rxr->rx_packets.ev_count = 0;
+		rxr->rx_bytes.ev_count = 0;
+		rxr->rx_copies.ev_count = 0;
+		rxr->no_jmbuf.ev_count = 0;
+		rxr->rx_discarded.ev_count = 0;
+	}
+	stats->ipcs.ev_count = 0;
+	stats->l4cs.ev_count = 0;
+	stats->ipcs_bad.ev_count = 0;
+	stats->l4cs_bad.ev_count = 0;
+	stats->intzero.ev_count = 0;
+	stats->legint.ev_count = 0;
+	stats->crcerrs.ev_count = 0;
+	stats->illerrc.ev_count = 0;
+	stats->errbc.ev_count = 0;
+	stats->mspdc.ev_count = 0;
+	stats->mbsdc.ev_count = 0;
+	stats->mpctotal.ev_count = 0;
+	stats->mlfc.ev_count = 0;
+	stats->mrfc.ev_count = 0;
+	stats->rlec.ev_count = 0;
+	stats->lxontxc.ev_count = 0;
+	stats->lxonrxc.ev_count = 0;
+	stats->lxofftxc.ev_count = 0;
+	stats->lxoffrxc.ev_count = 0;
+
+	/* Packet Reception Stats */
+	stats->tor.ev_count = 0;
+	stats->gorc.ev_count = 0;
+	stats->tpr.ev_count = 0;
+	stats->gprc.ev_count = 0;
+	stats->mprc.ev_count = 0;
+	stats->bprc.ev_count = 0;
+	stats->prc64.ev_count = 0;
+	stats->prc127.ev_count = 0;
+	stats->prc255.ev_count = 0;
+	stats->prc511.ev_count = 0;
+	stats->prc1023.ev_count = 0;
+	stats->prc1522.ev_count = 0;
+	stats->ruc.ev_count = 0;
+	stats->rfc.ev_count = 0;
+	stats->roc.ev_count = 0;
+	stats->rjc.ev_count = 0;
+	stats->mngprc.ev_count = 0;
+	stats->mngpdc.ev_count = 0;
+	stats->xec.ev_count = 0;
+
+	/* Packet Transmission Stats */
+	stats->gotc.ev_count = 0;
+	stats->tpt.ev_count = 0;
+	stats->gptc.ev_count = 0;
+	stats->bptc.ev_count = 0;
+	stats->mptc.ev_count = 0;
+	stats->mngptc.ev_count = 0;
+	stats->ptc64.ev_count = 0;
+	stats->ptc127.ev_count = 0;
+	stats->ptc255.ev_count = 0;
+	stats->ptc511.ev_count = 0;
+	stats->ptc1023.ev_count = 0;
+	stats->ptc1522.ev_count = 0;
 }
 
 static void

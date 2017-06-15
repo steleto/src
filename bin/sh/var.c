@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.49 2016/03/31 16:16:35 christos Exp $	*/
+/*	$NetBSD: var.c,v 1.58 2017/06/07 08:06:22 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,10 +37,11 @@
 #if 0
 static char sccsid[] = "@(#)var.c	8.3 (Berkeley) 5/4/95";
 #else
-__RCSID("$NetBSD: var.c,v 1.49 2016/03/31 16:16:35 christos Exp $");
+__RCSID("$NetBSD: var.c,v 1.58 2017/06/07 08:06:22 kre Exp $");
 #endif
 #endif /* not lint */
 
+#include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,8 +83,12 @@ struct varinit {
 	struct var *var;
 	int flags;
 	const char *text;
-	void (*func)(const char *);
+	union var_func_union v_u;
 };
+#define	func v_u.set_func
+#define	rfunc v_u.ref_func
+
+char *get_lineno(struct var *);
 
 struct localvar *localvars;
 
@@ -100,39 +105,47 @@ struct var vps2;
 struct var vps4;
 struct var vvers;
 struct var voptind;
+struct var line_num;
+
+struct var line_num;
+int line_number;
+int funclinebase = 0;
+int funclineabs = 0;
 
 char ifs_default[] = " \t\n";
 
 const struct varinit varinit[] = {
 #ifndef SMALL
 	{ &vhistsize,	VSTRFIXED|VTEXTFIXED|VUNSET,	"HISTSIZE=",
-	  sethistsize },
+	   { .set_func= sethistsize } },
 #endif
 	{ &vifs,	VSTRFIXED|VTEXTFIXED,		"IFS= \t\n",
-	  NULL },
+	   { NULL } },
 	{ &vmail,	VSTRFIXED|VTEXTFIXED|VUNSET,	"MAIL=",
-	  NULL },
+	   { NULL } },
 	{ &vmpath,	VSTRFIXED|VTEXTFIXED|VUNSET,	"MAILPATH=",
-	  NULL },
+	   { NULL } },
 	{ &vvers,	VSTRFIXED|VTEXTFIXED|VNOEXPORT, "NETBSD_SHELL=",
-	  NULL },
+	   { NULL } },
 	{ &vpath,	VSTRFIXED|VTEXTFIXED,		"PATH=" _PATH_DEFPATH,
-	  changepath },
+	   { .set_func= changepath } },
 	/*
 	 * vps1 depends on uid
 	 */
 	{ &vps2,	VSTRFIXED|VTEXTFIXED,		"PS2=> ",
-	  NULL },
+	   { NULL } },
 	{ &vps4,	VSTRFIXED|VTEXTFIXED,		"PS4=+ ",
-	  NULL },
+	   { NULL } },
 #ifndef SMALL
 	{ &vterm,	VSTRFIXED|VTEXTFIXED|VUNSET,	"TERM=",
-	  setterm },
+	   { .set_func= setterm } },
 #endif
 	{ &voptind,	VSTRFIXED|VTEXTFIXED|VNOFUNC,	"OPTIND=1",
-	  getoptsreset },
+	   { .set_func= getoptsreset } },
+	{ &line_num,	VSTRFIXED|VTEXTFIXED|VFUNCREF,	"LINENO=1",
+	   { .ref_func= get_lineno } },
 	{ NULL,	0,				NULL,
-	  NULL }
+	   { NULL } }
 };
 
 struct var *vartab[VTABSIZE];
@@ -162,14 +175,51 @@ INIT {
 	}
 
 	/*
+	 * Set variables which override anything read from environment.
+	 *
 	 * PPID is readonly
-	 *	set after processing environ to override anything there
-	 * Always default IFS, ignore any value from environment.
+	 * Always default IFS
+	 * NETBSD_SHELL is a constant (readonly), and is never exported
+	 * LINENO is simply magic...
 	 */
 	snprintf(buf, sizeof(buf), "%d", (int)getppid());
 	setvar("PPID", buf, VREADONLY);
 	setvar("IFS", ifs_default, VTEXTFIXED);
-	setvar("NETBSD_SHELL", NETBSD_SHELL, VTEXTFIXED|VREADONLY|VNOEXPORT);
+
+	setvar("NETBSD_SHELL", NETBSD_SHELL
+#ifdef BUILD_DATE
+		" BUILD:" BUILD_DATE
+#endif
+#ifdef DEBUG
+		" DEBUG"
+#endif
+#if !defined(JOBS) || JOBS == 0
+		" -JOBS"
+#endif
+#ifndef DO_SHAREDVFORK
+		" -VFORK"
+#endif
+#ifdef SMALL
+		" SMALL"
+#endif
+#ifdef TINY
+		" TINY"
+#endif
+#ifdef OLD_TTY_DRIVER
+		" OLD_TTY"
+#endif
+#ifdef SYSV
+		" SYSV"
+#endif
+#ifndef BSD
+		" -BSD"
+#endif
+#ifdef BOGUS_NOT_COMMAND
+		" BOGUS_NOT"
+#endif
+		    , VTEXTFIXED|VREADONLY|VNOEXPORT);
+
+	setvar("LINENO", "1", VTEXTFIXED);
 }
 #endif
 
@@ -193,7 +243,7 @@ initvar(void)
 		*vpp = vp;
 		vp->text = strdup(ip->text);
 		vp->flags = ip->flags;
-		vp->func = ip->func;
+		vp->v_u = ip->v_u;
 	}
 	/*
 	 * PS1 depends on uid
@@ -307,9 +357,10 @@ setvareq(char *s, int flags)
 			error("%.*s: is read only", vp->name_len, s);
 		if (flags & VNOSET)
 			return;
+
 		INTOFF;
 
-		if (vp->func && (flags & VNOFUNC) == 0)
+		if (vp->func && !(vp->flags & VFUNCREF) && !(flags & VNOFUNC))
 			(*vp->func)(s + vp->name_len + 1);
 
 		if ((vp->flags & (VTEXTFIXED|VSTACK)) == 0)
@@ -318,6 +369,8 @@ setvareq(char *s, int flags)
 		vp->flags &= ~(VTEXTFIXED|VSTACK|VUNSET);
 		if (flags & VNOEXPORT)
 			vp->flags &= ~VEXPORT;
+		if (vp->flags & VNOEXPORT)
+			flags &= ~VEXPORT;
 		vp->flags |= flags & ~VNOFUNC;
 		vp->text = s;
 
@@ -327,6 +380,7 @@ setvareq(char *s, int flags)
 		 */
 		if (vp == &vmpath || (vp == &vmail && ! mpathset()))
 			chkmail(1);
+
 		INTON;
 		return;
 	}
@@ -334,7 +388,7 @@ setvareq(char *s, int flags)
 	if (flags & VNOSET)
 		return;
 	vp = ckmalloc(sizeof (*vp));
-	vp->flags = flags & ~VNOFUNC;
+	vp->flags = flags & ~(VNOFUNC|VFUNCREF);
 	vp->text = s;
 	vp->name_len = nlen;
 	vp->next = *vpp;
@@ -382,6 +436,8 @@ lookupvar(const char *name)
 	v = find_var(name, NULL, NULL);
 	if (v == NULL || v->flags & VUNSET)
 		return NULL;
+	if (v->rfunc && (v->flags & VFUNCREF) != 0)
+		return (*v->rfunc)(v) + v->name_len + 1;
 	return v->text + v->name_len + 1;
 }
 
@@ -408,6 +464,8 @@ bltinlookup(const char *name, int doall)
 
 	if (v == NULL || v->flags & VUNSET || (!doall && !(v->flags & VEXPORT)))
 		return NULL;
+	if (v->rfunc && (v->flags & VFUNCREF) != 0)
+		return (*v->rfunc)(v) + v->name_len + 1;
 	return v->text + v->name_len + 1;
 }
 
@@ -430,14 +488,20 @@ environment(void)
 	nenv = 0;
 	for (vpp = vartab ; vpp < vartab + VTABSIZE ; vpp++) {
 		for (vp = *vpp ; vp ; vp = vp->next)
-			if (vp->flags & VEXPORT)
+			if ((vp->flags & (VEXPORT|VUNSET)) == VEXPORT)
 				nenv++;
 	}
+	CTRACE(DBG_VARS, ("environment: %d vars to export\n", nenv));
 	ep = env = stalloc((nenv + 1) * sizeof *env);
 	for (vpp = vartab ; vpp < vartab + VTABSIZE ; vpp++) {
 		for (vp = *vpp ; vp ; vp = vp->next)
-			if (vp->flags & VEXPORT)
-				*ep++ = vp->text;
+			if ((vp->flags & (VEXPORT|VUNSET)) == VEXPORT) {
+				if (vp->rfunc && (vp->flags & VFUNCREF))
+					*ep++ = (*vp->rfunc)(vp);
+				else
+					*ep++ = vp->text;
+				VTRACE(DBG_VARS, ("environment: %s\n", ep[-1]));
+			}
 	}
 	*ep = NULL;
 	return env;
@@ -497,6 +561,10 @@ print_quoted(const char *p)
 {
 	const char *q;
 
+	if (p[0] == '\0') {
+		out1fmt("''");
+		return;
+	}
 	if (strcspn(p, "|&;<>()$`\\\"' \t\n*?[]#~=%") == strlen(p)) {
 		out1fmt("%s", p);
 		return;
@@ -522,9 +590,34 @@ sort_var(const void *v_v1, const void *v_v2)
 {
 	const struct var * const *v1 = v_v1;
 	const struct var * const *v2 = v_v2;
+	char *t1 = (*v1)->text, *t2 = (*v2)->text;
 
-	/* XXX Will anyone notice we include the '=' of the shorter name? */
-	return strcoll((*v1)->text, (*v2)->text);
+	if (*t1 == *t2) {
+		char *p, *s;
+
+		STARTSTACKSTR(p);
+
+		/*
+		 * note: if lengths are equal, strings must be different
+		 * so we don't care which string we pick for the \0 in
+		 * that case.
+		 */
+		if ((strchr(t1, '=') - t1) <= (strchr(t2, '=') - t2)) {
+			s = t1;
+			t1 = p;
+		} else {
+			s = t2;
+			t2 = p;
+		}
+
+		while (*s && *s != '=') {
+			STPUTC(*s, p);
+			s++;
+		}
+		STPUTC('\0', p);
+	}
+
+	return strcoll(t1, t2);
 }
 
 /*
@@ -574,7 +667,13 @@ showvars(const char *name, int flag, int show_value, const char *xtra)
 			out1fmt("%s ", name);
 		if (xtra)
 			out1fmt("%s ", xtra);
-		for (p = vp->text ; *p != '=' ; p++)
+		p = vp->text;
+		if (vp->rfunc && (vp->flags & VFUNCREF) != 0) {
+			p = (*vp->rfunc)(vp);
+			if (p == NULL)
+				p = vp->text;
+		}
+		for ( ; *p != '=' ; p++)
 			out1c(*p);
 		if (!(vp->flags & VUNSET) && show_value) {
 			out1fmt("=");
@@ -603,7 +702,7 @@ exportcmd(int argc, char **argv)
 	int xflg = 0;
 	int res;
 	int c;
-
+	int f;
 
 	while ((c = nextopt("npx")) != '\0') {
 		switch (c) {
@@ -639,6 +738,7 @@ exportcmd(int argc, char **argv)
 
 	res = 0;
 	while ((name = *argptr++) != NULL) {
+		f = flag;
 		if ((p = strchr(name, '=')) != NULL) {
 			p++;
 		} else {
@@ -654,10 +754,11 @@ exportcmd(int argc, char **argv)
 						vp->flags &= ~VEXPORT;
 				}
 				continue;
-			}
+			} else
+				f |= VUNSET;
 		}
 		if (!nflg)
-			setvar(name, p, flag);
+			setvar(name, p, f);
 	}
 	return res;
 }
@@ -671,11 +772,22 @@ int
 localcmd(int argc, char **argv)
 {
 	char *name;
+	int c;
+	int flags = 0;		/*XXX perhaps VUNSET from a -o option value */
 
 	if (! in_function())
 		error("Not in a function");
+
+	/* upper case options, as bash stole all the good ones ... */
+	while ((c = nextopt("INx")) != '\0')
+		switch (c) {
+		case 'I':	flags &= ~VUNSET;	break;
+		case 'N':	flags |= VUNSET;	break;
+		case 'x':	flags |= VEXPORT;	break;
+		}
+
 	while ((name = *argptr++) != NULL) {
-		mklocal(name, 0);
+		mklocal(name, flags);
 	}
 	return 0;
 }
@@ -705,8 +817,10 @@ mklocal(const char *name, int flags)
 	} else {
 		vp = find_var(name, &vpp, NULL);
 		if (vp == NULL) {
+			flags &= ~VNOEXPORT;
 			if (strchr(name, '='))
-				setvareq(savestr(name), VSTRFIXED|flags);
+				setvareq(savestr(name),
+				    VSTRFIXED | (flags & ~VUNSET));
 			else
 				setvar(name, NULL, VSTRFIXED|flags);
 			vp = *vpp;	/* the new variable */
@@ -716,8 +830,24 @@ mklocal(const char *name, int flags)
 			lvp->text = vp->text;
 			lvp->flags = vp->flags;
 			vp->flags |= VSTRFIXED|VTEXTFIXED;
+			if (vp->flags & VNOEXPORT)
+				flags &= ~VEXPORT;
+			if (flags & (VNOEXPORT | VUNSET))
+				vp->flags &= ~VEXPORT;
+			flags &= ~VNOEXPORT;
 			if (name[vp->name_len] == '=')
-				setvareq(savestr(name), flags);
+				setvareq(savestr(name), flags & ~VUNSET);
+			else if (flags & VUNSET)
+				unsetvar(name, 0);
+			else
+				vp->flags |= flags & (VUNSET|VEXPORT);
+
+			if (vp == &line_num) {
+				if (name[vp->name_len] == '=')
+					funclinebase = funclineabs -1;
+				else
+					funclinebase = 0;
+			}
 		}
 	}
 	lvp->vp = vp;
@@ -744,10 +874,11 @@ poplocalvars(void)
 		if (vp == NULL) {	/* $- saved */
 			memcpy(optlist, lvp->text, sizeof_optlist);
 			ckfree(lvp->text);
+			optschanged();
 		} else if ((lvp->flags & (VUNSET|VSTRFIXED)) == VUNSET) {
 			(void)unsetvar(vp->text, 0);
 		} else {
-			if (vp->func && (vp->flags & VNOFUNC) == 0)
+			if (vp->func && (vp->flags & (VNOFUNC|VFUNCREF)) == 0)
 				(*vp->func)(lvp->text + vp->name_len + 1);
 			if ((vp->flags & VTEXTFIXED) == 0)
 				ckfree(vp->text);
@@ -785,14 +916,24 @@ unsetcmd(int argc, char **argv)
 	int i;
 	int flg_func = 0;
 	int flg_var = 0;
+	int flg_x = 0;
 	int ret = 0;
 
-	while ((i = nextopt("evf")) != '\0') {
-		if (i == 'f')
+	while ((i = nextopt("efvx")) != '\0') {
+		switch (i) {
+		case 'f':
 			flg_func = 1;
-		else
-			flg_var = i;
+			break;
+		case 'e':
+		case 'x':
+			flg_x = (2 >> (i == 'e'));
+			/* FALLTHROUGH */
+		case 'v':
+			flg_var = 1;
+			break;
+		}
 	}
+
 	if (flg_func == 0 && flg_var == 0)
 		flg_var = 1;
 
@@ -800,7 +941,7 @@ unsetcmd(int argc, char **argv)
 		if (flg_func)
 			ret |= unsetfunc(*ap);
 		if (flg_var)
-			ret |= unsetvar(*ap, flg_var == 'e');
+			ret |= unsetvar(*ap, flg_x);
 	}
 	return ret;
 }
@@ -820,18 +961,19 @@ unsetvar(const char *s, int unexport)
 	if (vp == NULL)
 		return 0;
 
-	if (vp->flags & VREADONLY && !unexport)
+	if (vp->flags & VREADONLY && !(unexport & 1))
 		return 1;
 
 	INTOFF;
-	if (unexport) {
+	if (unexport & 1) {
 		vp->flags &= ~VEXPORT;
 	} else {
 		if (vp->text[vp->name_len + 1] != '\0')
 			setvar(s, nullstr, 0);
-		vp->flags &= ~VEXPORT;
+		if (!(unexport & 2))
+			vp->flags &= ~VEXPORT;
 		vp->flags |= VUNSET;
-		if ((vp->flags & VSTRFIXED) == 0) {
+		if ((vp->flags&(VEXPORT|VSTRFIXED|VREADONLY|VNOEXPORT)) == 0) {
 			if ((vp->flags & VTEXTFIXED) == 0)
 				ckfree(vp->text);
 			*vpp = vp->next;
@@ -897,4 +1039,18 @@ find_var(const char *name, struct var ***vppp, int *lenp)
 		return vp;
 	}
 	return NULL;
+}
+
+char *
+get_lineno(struct var *vp)
+{
+	static char lineno_buf[8 + 14];
+	int ln = line_number;
+
+	if (vp->flags & VUNSET)
+		return NULL;
+
+	ln -= funclinebase;
+	snprintf(lineno_buf, sizeof(lineno_buf), "LINENO=%d", ln);;
+	return lineno_buf;
 }

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.6 2016/07/21 12:24:54 christos Exp $
+# $NetBSD: Makefile,v 1.8 2017/05/21 15:28:43 riastradh Exp $
 
 .include <bsd.own.mk>
 
@@ -26,6 +26,9 @@ MDOCMLLIB=	${MDOCMLOBJDIR}/libmandoc.a
 
 DPADD.makemandb+= 	${MDOCMLLIB} ${LIBARCHIVE} ${LIBBZ2} ${LIBLZMA} ${LIBZ}
 LDADD.makemandb+= 	-L${MDOCMLOBJDIR} -lmandoc -larchive -lbz2 -llzma -lz
+LDADD.makemandb+=	-lcrypto
+DPADD.makemandb+=	${LIBCRYPTO}
+
 DPADD+=		${LIBSQLITE3} ${LIBM} ${LIBZ} ${LIBTERMLIB} ${LIBUTIL}
 LDADD+=		-lsqlite3 -lm -lz -ltermlib -lutil
 

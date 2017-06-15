@@ -1,9 +1,9 @@
-/*	$NetBSD: defs.h,v 1.10 2016/01/09 22:05:33 christos Exp $	*/
+/*	$NetBSD: defs.h,v 1.12 2017/06/05 18:54:30 christos Exp $	*/
 
 #if HAVE_NBTOOL_CONFIG_H
 #include "nbtool_config.h"
 #endif
-/* Id: defs.h,v 1.51 2014/10/02 22:38:13 tom Exp  */
+/* Id: defs.h,v 1.57 2017/04/30 23:29:11 tom Exp  */
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -206,7 +206,7 @@ struct bucket
 #if defined(YYBTYACC)
     char **argnames;
     char **argtags;
-    int  args;
+    int args;
     char *destructor;
 #endif
     Value_t value;
@@ -312,12 +312,14 @@ extern const char *const hdr_defs[];
 extern const char *const hdr_vars[];
 extern const char *const body_1[];
 extern const char *const body_vars[];
+extern const char *const init_vars[];
 extern const char *const body_2[];
 extern const char *const body_3[];
 extern const char *const trailer[];
 
 extern char *code_file_name;
 extern char *input_file_name;
+extern size_t input_file_name_len;
 extern char *defines_file_name;
 extern char *externs_file_name;
 
@@ -423,26 +425,28 @@ extern param *parse_param;
 #endif
 
 #ifndef GCC_PRINTFLIKE
-#define GCC_PRINTFLIKE(fmt,var) /*nothing*/
+#define GCC_PRINTFLIKE(fmt,var)	/*nothing */
 #endif
 
 /* closure.c */
-extern void closure(Value_t * nucleus, int n);
+extern void closure(Value_t *nucleus, int n);
 extern void finalize_closure(void);
 extern void set_first_derives(void);
 
 /* error.c */
+struct ainfo
+{
+    int a_lineno;
+    char *a_line;
+    char *a_cptr;
+};
+
 extern void arg_number_disagree_warning(int a_lineno, char *a_name);
 extern void arg_type_disagree_warning(int a_lineno, int i, char *a_name);
 extern void at_error(int a_lineno, char *a_line, char *a_cptr) GCC_NORETURN;
 extern void at_warning(int a_lineno, int i);
 extern void bad_formals(void) GCC_NORETURN;
-extern void default_action_warning(void);
-struct ainfo {
-	int a_lineno;
-	char *a_line;
-	char *a_cptr;
-};
+extern void default_action_warning(char *s);
 extern void destructor_redeclared_warning(const struct ainfo *);
 extern void dollar_error(int a_lineno, char *a_line, char *a_cptr) GCC_NORETURN;
 extern void dollar_warning(int a_lineno, int i);
@@ -470,7 +474,7 @@ extern void unexpected_EOF(void) GCC_NORETURN;
 extern void unknown_arg_warning(int d_lineno, const char *dlr_opt, const char *d_arg, const char *d_line, const char *d_cptr);
 extern void unknown_rhs(int i) GCC_NORETURN;
 extern void unsupported_flag_warning(const char *flag, const char *details);
-extern void unterminated_action(const struct ainfo *);
+extern void unterminated_action(const struct ainfo *) GCC_NORETURN;
 extern void unterminated_comment(const struct ainfo *) GCC_NORETURN;
 extern void unterminated_string(const struct ainfo *) GCC_NORETURN;
 extern void unterminated_text(const struct ainfo *) GCC_NORETURN;

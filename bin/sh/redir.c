@@ -1,4 +1,4 @@
-/*	$NetBSD: redir.c,v 1.49 2017/01/21 23:03:36 christos Exp $	*/
+/*	$NetBSD: redir.c,v 1.57 2017/05/29 22:21:00 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)redir.c	8.2 (Berkeley) 5/4/95";
 #else
-__RCSID("$NetBSD: redir.c,v 1.49 2017/01/21 23:03:36 christos Exp $");
+__RCSID("$NetBSD: redir.c,v 1.57 2017/05/29 22:21:00 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -56,6 +56,7 @@ __RCSID("$NetBSD: redir.c,v 1.49 2017/01/21 23:03:36 christos Exp $");
  */
 
 #include "main.h"
+#include "builtins.h"
 #include "shell.h"
 #include "nodes.h"
 #include "jobs.h"
@@ -64,6 +65,7 @@ __RCSID("$NetBSD: redir.c,v 1.49 2017/01/21 23:03:36 christos Exp $");
 #include "redir.h"
 #include "output.h"
 #include "memalloc.h"
+#include "mystring.h"
 #include "error.h"
 
 
@@ -112,6 +114,18 @@ STATIC void openredirect(union node *, char[10], int);
 STATIC int openhere(const union node *);
 STATIC int copyfd(int, int, int);
 STATIC void find_big_fd(void);
+
+
+struct shell_fds {		/* keep track of internal shell fds */
+	struct shell_fds *nxt;
+	void (*cb)(int, int);
+	int fd;
+};
+
+STATIC struct shell_fds *sh_fd_list;
+
+STATIC void renumber_sh_fd(struct shell_fds *);
+STATIC struct shell_fds *sh_fd(int);
 
 STATIC const struct renamelist *
 is_renamed(const struct renamelist *rl, int fd)
@@ -187,6 +201,9 @@ redirect(union node *redir, int flags)
 	}
 	for (n = redir ; n ; n = n->nfile.next) {
 		fd = n->nfile.fd;
+		if (fd > max_user_fd)
+			max_user_fd = fd;
+		renumber_sh_fd(sh_fd(fd));
 		if ((n->nfile.type == NTOFD || n->nfile.type == NFROMFD) &&
 		    n->ndup.dupfd == fd) {
 			/* redirect from/to same file descriptor */
@@ -321,7 +338,7 @@ openredirect(union node *redir, char memory[10], int flags)
 		abort();
 	}
 
-	cloexec = fd > 2 && (flags & REDIR_KEEP) == 0;
+	cloexec = fd > 2 && (flags & REDIR_KEEP) == 0 && !posix;
 	if (f != fd) {
 		if (copyfd(f, fd, cloexec) < 0) {
 			int e = errno;
@@ -501,8 +518,12 @@ STATIC void
 find_big_fd(void)
 {
 	int i, fd;
+	static int last_start = 3; /* aim to keep sh fd's under 20 */
 
-	for (i = (1 << 10); i >= 10; i >>= 1) {
+	if (last_start < 10)
+		last_start++;
+
+	for (i = (1 << last_start); i >= 10; i >>= 1) {
 		if ((fd = fcntl(0, F_DUPFD, i - 1)) >= 0) {
 			close(fd);
 			break;
@@ -510,9 +531,7 @@ find_big_fd(void)
 	}
 
 	fd = (i / 5) * 4;
-	if ((i - fd) > 100)
-		fd = i - 100;
-	else if (fd < 10)
+	if (fd < 10)
 		fd = 10;
 
 	big_sh_fd = fd;
@@ -539,7 +558,7 @@ to_upper_fd(int fd)
 				close(fd);
 			return i;
 		}
-		if (errno != EMFILE)
+		if (errno != EMFILE && errno != EINVAL)
 			break;
 		find_big_fd();
 	} while (big_sh_fd > 10);
@@ -551,4 +570,311 @@ to_upper_fd(int fd)
 	 */
 	(void)fcntl(fd, F_SETFD, FD_CLOEXEC);
 	return fd;
+}
+
+void
+register_sh_fd(int fd, void (*cb)(int, int))
+{
+	struct shell_fds *fp;
+
+	fp = ckmalloc(sizeof (struct shell_fds));
+	if (fp != NULL) {
+		fp->nxt = sh_fd_list;
+		sh_fd_list = fp;
+
+		fp->fd = fd;
+		fp->cb = cb;
+	}
+}
+
+void
+sh_close(int fd)
+{
+	struct shell_fds **fpp, *fp;
+
+	fpp = &sh_fd_list;
+	while ((fp = *fpp) != NULL) {
+		if (fp->fd == fd) {
+			*fpp = fp->nxt;
+			ckfree(fp);
+			break;
+		}
+		fpp = &fp->nxt;
+	}
+	(void)close(fd);
+}
+
+STATIC struct shell_fds *
+sh_fd(int fd)
+{
+	struct shell_fds *fp;
+
+	for (fp = sh_fd_list; fp != NULL; fp = fp->nxt)
+		if (fp->fd == fd)
+			return fp;
+	return NULL;
+}
+
+STATIC void
+renumber_sh_fd(struct shell_fds *fp)
+{
+	int to;
+
+	if (fp == NULL)
+		return;
+
+#ifndef	F_DUPFD_CLOEXEC
+#define	F_DUPFD_CLOEXEC	F_DUPFD
+#define	CLOEXEC(fd)	(fcntl((fd), F_SETFD, fcntl((fd),F_GETFD) | FD_CLOEXEC))
+#else
+#define	CLOEXEC(fd)
+#endif
+
+	/*
+	 * if we have had a collision, and the sh fd was a "big" one
+	 * try moving the sh fd base to a higher number (if possible)
+	 * so future sh fds are less likely to be in the user's sights
+	 * (incl this one when moved)
+	 */
+	if (fp->fd >= big_sh_fd)
+		find_big_fd();
+
+	to = fcntl(fp->fd, F_DUPFD_CLOEXEC, big_sh_fd);
+	if (to == -1)
+		to = fcntl(fp->fd, F_DUPFD_CLOEXEC, big_sh_fd/2);
+	if (to == -1)
+		to = fcntl(fp->fd, F_DUPFD_CLOEXEC, fp->fd + 1);
+	if (to == -1)
+		to = fcntl(fp->fd, F_DUPFD_CLOEXEC, 10);
+	if (to == -1)
+		to = fcntl(fp->fd, F_DUPFD_CLOEXEC, 3);
+	if (to == -1)
+		error("insufficient file descriptors available");
+	CLOEXEC(to);
+
+	if (fp->fd == to)	/* impossible? */
+		return;
+
+	(*fp->cb)(fp->fd, to);
+	(void)close(fp->fd);
+	fp->fd = to;
+}
+
+static const struct flgnames {
+	const char *name;
+	uint16_t minch;
+	uint32_t value;
+} nv[] = {
+#ifdef O_APPEND
+	{ "append",	2,	O_APPEND 	},
+#endif
+#ifdef O_ASYNC
+	{ "async",	2,	O_ASYNC		},
+#endif
+#ifdef O_SYNC
+	{ "sync",	2,	O_SYNC		},
+#endif
+#ifdef O_NONBLOCK
+	{ "nonblock",	3,	O_NONBLOCK	},
+#endif
+#ifdef O_FSYNC
+	{ "fsync",	2,	O_FSYNC		},
+#endif
+#ifdef O_DSYNC
+	{ "dsync",	2,	O_DSYNC		},
+#endif
+#ifdef O_RSYNC
+	{ "rsync",	2,	O_RSYNC		},
+#endif
+#ifdef O_ALTIO
+	{ "altio",	2,	O_ALT_IO	},
+#endif
+#ifdef O_DIRECT
+	{ "direct",	2,	O_DIRECT	},
+#endif
+#ifdef O_NOSIGPIPE
+	{ "nosigpipe",	3,	O_NOSIGPIPE	},
+#endif
+#ifdef O_CLOEXEC
+	{ "cloexec",	2,	O_CLOEXEC	},
+#endif
+	{ 0, 0, 0 }
+};
+#define ALLFLAGS (O_APPEND|O_ASYNC|O_SYNC|O_NONBLOCK|O_DSYNC|O_RSYNC|\
+    O_ALT_IO|O_DIRECT|O_NOSIGPIPE|O_CLOEXEC)
+
+static int
+getflags(int fd, int p)
+{
+	int c, f;
+
+	if (sh_fd(fd) != NULL) {
+		if (!p)
+			return -1;
+		error("Can't get status for fd=%d (%s)", fd,
+		    "Bad file descriptor");			/*XXX*/
+	}
+
+	if ((c = fcntl(fd, F_GETFD)) == -1) {
+		if (!p)
+			return -1;
+		error("Can't get status for fd=%d (%s)", fd, strerror(errno));
+	}
+	if ((f = fcntl(fd, F_GETFL)) == -1) {
+		if (!p)
+			return -1;
+		error("Can't get flags for fd=%d (%s)", fd, strerror(errno));
+	}
+	if (c & FD_CLOEXEC)
+		f |= O_CLOEXEC;
+	return f & ALLFLAGS;
+}
+
+static void
+printone(int fd, int p, int verbose, int pfd)
+{
+	int f = getflags(fd, p);
+	const struct flgnames *fn;
+
+	if (f == -1)
+		return;
+
+	if (pfd)
+		outfmt(out1, "%d: ", fd);
+	for (fn = nv; fn->name; fn++) {
+		if (f & fn->value) {
+			outfmt(out1, "%s%s", verbose ? "+" : "", fn->name);
+			f &= ~fn->value;
+		} else if (verbose)
+			outfmt(out1, "-%s", fn->name);
+		else
+			continue;
+		if (f || (verbose && fn[1].name))
+			outfmt(out1, ",");
+	}
+	if (verbose && f)		/* f should be normally be 0 */
+		outfmt(out1, " +%#x", f);
+	outfmt(out1, "\n");
+}
+
+static void
+parseflags(char *s, int *p, int *n)
+{
+	int *v, *w;
+	const struct flgnames *fn;
+	size_t len;
+
+	*p = 0;
+	*n = 0;
+	for (s = strtok(s, ","); s; s = strtok(NULL, ",")) {
+		switch (*s++) {
+		case '+':
+			v = p;
+			w = n;
+			break;
+		case '-':
+			v = n;
+			w = p;
+			break;
+		default:
+			error("Missing +/- indicator before flag %s", s-1);
+		}
+			
+		len = strlen(s);
+		for (fn = nv; fn->name; fn++)
+			if (len >= fn->minch && strncmp(s,fn->name,len) == 0) {
+				*v |= fn->value;
+				*w &=~ fn->value;
+				break;
+			}
+		if (fn->name == 0)
+			error("Bad flag `%s'", s);
+	}
+}
+
+static void
+setone(int fd, int pos, int neg, int verbose)
+{
+	int f = getflags(fd, 1);
+	int n, cloexec;
+
+	if (f == -1)
+		return;
+
+	cloexec = -1;
+	if ((pos & O_CLOEXEC) && !(f & O_CLOEXEC))
+		cloexec = FD_CLOEXEC;
+	if ((neg & O_CLOEXEC) && (f & O_CLOEXEC))
+		cloexec = 0;
+
+	if (cloexec != -1 && fcntl(fd, F_SETFD, cloexec) == -1)
+		error("Can't set status for fd=%d (%s)", fd, strerror(errno));
+
+	pos &= ~O_CLOEXEC;
+	neg &= ~O_CLOEXEC;
+	f &= ~O_CLOEXEC;
+	n = f;
+	n |= pos;
+	n &= ~neg;
+	if (n != f && fcntl(fd, F_SETFL, n) == -1)
+		error("Can't set flags for fd=%d (%s)", fd, strerror(errno));
+	if (verbose)
+		printone(fd, 1, verbose, 1);
+}
+
+int
+fdflagscmd(int argc, char *argv[])
+{
+	char *num;
+	int verbose = 0, ch, pos = 0, neg = 0;
+	char *setflags = NULL;
+
+	optreset = 1; optind = 1; /* initialize getopt */
+	while ((ch = getopt(argc, argv, ":vs:")) != -1)
+		switch ((char)ch) {
+		case 'v':
+			verbose = 1;
+			break;
+		case 's':
+			if (setflags)
+				goto msg;
+			setflags = optarg;
+			break;
+		case '?':
+		default:
+		msg:
+			error("Usage: fdflags [-v] [-s <flags> fd] [fd...]");
+			/* NOTREACHED */
+		}
+
+	argc -= optind, argv += optind;
+
+	if (setflags)
+		parseflags(setflags, &pos, &neg);
+
+	if (argc == 0) {
+		int i;
+
+		if (setflags)
+			goto msg;
+
+		for (i = 0; i <= max_user_fd; i++)
+			printone(i, 0, verbose, 1);
+		return 0;
+	}
+
+	while ((num = *argv++) != NULL) {
+		int fd = number(num);
+
+		while (num[0] == '0' && num[1] != '\0')		/* skip 0's */
+			num++;
+		if (strlen(num) > 5)
+			error("%s too big to be a file descriptor", num);
+
+		if (setflags)
+			setone(fd, pos, neg, verbose);
+		else
+			printone(fd, 1, verbose, argc > 1);
+	}
+	return 0;
 }

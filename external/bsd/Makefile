@@ -1,8 +1,8 @@
-#	$NetBSD: Makefile,v 1.56 2017/01/07 19:53:49 christos Exp $
+#	$NetBSD: Makefile,v 1.58 2017/05/21 15:28:38 riastradh Exp $
 
 .include <bsd.own.mk>
 
-SUBDIR=	acpica am-utils bind byacc cron dhcpcd ekermit elftosb \
+SUBDIR=	acpica am-utils bc bind byacc cron dhcpcd ekermit elftosb \
 	fetch file flex less \
 	libarchive libevent liblzf libpcap mdocml \
 	ntp openresolv tcpdump tmux top tre wpa
@@ -10,9 +10,7 @@ SUBDIR=	acpica am-utils bind byacc cron dhcpcd ekermit elftosb \
 .if (${MKATF} != "no")
 SUBDIR+= atf
 .endif
-.if (${MKCRYPTO} != "no")
 SUBDIR+= pkg_install
-.endif
 # IP Filter
 .if (${MKIPFILTER} != "no")
 SUBDIR+=ipf
@@ -42,7 +40,7 @@ SUBDIR+= pcc
 SUBDIR+= libproc
 SUBDIR+= librtld_db
 .endif
-.if (${MKCRYPTO} != "no" && ${MKUNBOUND} != "no")
+.if ${MKUNBOUND} != "no"
 SUBDIR+= unbound
 .endif
 

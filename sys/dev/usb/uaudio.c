@@ -1,4 +1,4 @@
-/*	$NetBSD: uaudio.c,v 1.147 2016/07/07 06:55:42 msaitoh Exp $	*/
+/*	$NetBSD: uaudio.c,v 1.154 2017/06/09 10:11:20 nat Exp $	*/
 
 /*
  * Copyright (c) 1999, 2012 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.147 2016/07/07 06:55:42 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.154 2017/06/09 10:11:20 nat Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -603,10 +603,6 @@ uaudio_mixer_add_ctl(struct uaudio_softc *sc, struct mixerctl *mc)
 	}
 	len = sizeof(*mc) * (sc->sc_nctls + 1);
 	nmc = kmem_alloc(len, KM_SLEEP);
-	if (nmc == NULL) {
-		aprint_error("uaudio_mixer_add_ctl: no memory\n");
-		return;
-	}
 	/* Copy old data, if there was any */
 	if (sc->sc_nctls != 0) {
 		memcpy(nmc, sc->sc_ctls, sizeof(*mc) * (sc->sc_nctls));
@@ -1540,10 +1536,6 @@ uaudio_add_alt(struct uaudio_softc *sc, const struct as_info *ai)
 
 	len = sizeof(*ai) * (sc->sc_nalts + 1);
 	nai = kmem_alloc(len, KM_SLEEP);
-	if (nai == NULL) {
-		aprint_error("uaudio_add_alt: no memory\n");
-		return;
-	}
 	/* Copy old data, if there was any */
 	if (sc->sc_nalts != 0) {
 		memcpy(nai, sc->sc_alts, sizeof(*ai) * (sc->sc_nalts));
@@ -1830,8 +1822,6 @@ uaudio_identify_as(struct uaudio_softc *sc,
 	/* build audio_format array */
 	sc->sc_formats = kmem_alloc(sizeof(struct audio_format) * sc->sc_nalts,
 	    KM_SLEEP);
-	if (sc->sc_formats == NULL)
-		return USBD_NOMEM;
 	sc->sc_nformats = sc->sc_nalts;
 	for (i = 0; i < sc->sc_nalts; i++) {
 		auf = &sc->sc_formats[i];
@@ -2600,8 +2590,10 @@ uaudio_trigger_input(void *addr, void *start, void *end, int blksize,
 		    ch->fraction);
 
 	mutex_exit(&sc->sc_intr_lock);
+	mutex_exit(&sc->sc_lock);
 	err = uaudio_chan_open(sc, ch);
 	if (err) {
+		mutex_enter(&sc->sc_lock);
 		mutex_enter(&sc->sc_intr_lock);
 		return EIO;
 	}
@@ -2609,6 +2601,7 @@ uaudio_trigger_input(void *addr, void *start, void *end, int blksize,
 	err = uaudio_chan_alloc_buffers(sc, ch);
 	if (err) {
 		uaudio_chan_close(sc, ch);
+		mutex_enter(&sc->sc_lock);
 		mutex_enter(&sc->sc_intr_lock);
 		return EIO;
 	}
@@ -2617,11 +2610,15 @@ uaudio_trigger_input(void *addr, void *start, void *end, int blksize,
 	ch->intr = intr;
 	ch->arg = arg;
 
-	 /* XXX -1 shouldn't be needed */
-	for (i = 0; i < UAUDIO_NCHANBUFS - 1; i++) {
+	/*
+	 * Start as half as many channels for recording as for playback.
+	 * This stops playback from stuttering in full-duplex operation.
+	 */
+	for (i = 0; i < UAUDIO_NCHANBUFS / 2; i++) {
 		uaudio_chan_rtransfer(ch);
 	}
 
+	mutex_enter(&sc->sc_lock);
 	mutex_enter(&sc->sc_intr_lock);
 
 	return 0;
@@ -2650,8 +2647,10 @@ uaudio_trigger_output(void *addr, void *start, void *end, int blksize,
 		    ch->fraction);
 
 	mutex_exit(&sc->sc_intr_lock);
+	mutex_exit(&sc->sc_lock);
 	err = uaudio_chan_open(sc, ch);
 	if (err) {
+		mutex_enter(&sc->sc_lock);
 		mutex_enter(&sc->sc_intr_lock);
 		return EIO;
 	}
@@ -2659,6 +2658,7 @@ uaudio_trigger_output(void *addr, void *start, void *end, int blksize,
 	err = uaudio_chan_alloc_buffers(sc, ch);
 	if (err) {
 		uaudio_chan_close(sc, ch);
+		mutex_enter(&sc->sc_lock);
 		mutex_enter(&sc->sc_intr_lock);
 		return EIO;
 	}
@@ -2666,9 +2666,9 @@ uaudio_trigger_output(void *addr, void *start, void *end, int blksize,
 	ch->intr = intr;
 	ch->arg = arg;
 
-	/* XXX -1 shouldn't be needed */
-	for (i = 0; i < UAUDIO_NCHANBUFS - 1; i++)
+	for (i = 0; i < UAUDIO_NCHANBUFS; i++)
 		uaudio_chan_ptransfer(ch);
+	mutex_enter(&sc->sc_lock);
 	mutex_enter(&sc->sc_intr_lock);
 
 	return 0;
@@ -2880,8 +2880,8 @@ uaudio_chan_pintr(struct usbd_xfer *xfer, void *priv,
 	}
 #endif
 
-	ch->transferred += cb->size;
 	mutex_enter(&ch->sc->sc_intr_lock);
+	ch->transferred += cb->size;
 	/* Call back to upper layer */
 	while (ch->transferred >= ch->blksize) {
 		ch->transferred -= ch->blksize;
@@ -2982,8 +2982,8 @@ uaudio_chan_rintr(struct usbd_xfer *xfer, void *priv,
 	}
 
 	/* Call back to upper layer */
-	ch->transferred += count;
 	mutex_enter(&ch->sc->sc_intr_lock);
+	ch->transferred += count;
 	while (ch->transferred >= ch->blksize) {
 		ch->transferred -= ch->blksize;
 		DPRINTFN(5, "call %p(%p)\n", ch->intr, ch->arg);

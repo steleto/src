@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.rumpnet,v 1.20 2017/01/17 08:10:37 ozaki-r Exp $
+#	$NetBSD: Makefile.rumpnet,v 1.22 2017/04/14 02:43:28 ozaki-r Exp $
 #
 
 LIB=		rumpnet
@@ -10,6 +10,7 @@ COMMENT=	Rump kernel networking faction
 	${RUMPTOP}/../netatalk					\
 	${RUMPTOP}/../netinet					\
 	${RUMPTOP}/../netinet6					\
+	${RUMPTOP}/../netipsec					\
 	${RUMPTOP}/../compat/common
 
 SRCS=	net_stub.c netisr.c rump_net.c
@@ -37,6 +38,9 @@ SRCS+=
 
 # bpf stubs, required for all kernels
 SRCS+=	bpf_stub.c
+
+# workqueue-based pr_input (required by inet and inet6)
+SRCS+=	wqinput.c
 
 CPPFLAGS+=	-I${RUMPTOP}/librump/rumpkern
 

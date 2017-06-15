@@ -1,4 +1,4 @@
-/*	$NetBSD: cryptosoft.c,v 1.47 2015/08/20 14:40:19 christos Exp $ */
+/*	$NetBSD: cryptosoft.c,v 1.51 2017/06/01 08:49:35 knakahara Exp $ */
 /*	$FreeBSD: src/sys/opencrypto/cryptosoft.c,v 1.2.2.1 2002/11/21 23:34:23 sam Exp $	*/
 /*	$OpenBSD: cryptosoft.c,v 1.35 2002/04/26 08:43:50 deraadt Exp $	*/
 
@@ -24,7 +24,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cryptosoft.c,v 1.47 2015/08/20 14:40:19 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cryptosoft.c,v 1.51 2017/06/01 08:49:35 knakahara Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -759,7 +759,6 @@ swcr_compdec(struct cryptodesc *crd, const struct swcr_data *sw,
 	if (result < crd->crd_len) {
 		adj = result - crd->crd_len;
 		if (outtype == CRYPTO_BUF_MBUF) {
-			adj = result - crd->crd_len;
 			m_adj((struct mbuf *)buf, adj);
 		}
 		/* Don't adjust the iov_len, it breaks the kmem_free */
@@ -948,7 +947,9 @@ swcr_newsession(void *arg, u_int32_t *sid, struct cryptoini *cri)
 			axf = &swcr_auth_hash_key_md5;
 			goto auth2common;
 
-		case CRYPTO_SHA1_KPDK:
+		case CRYPTO_SHA1_KPDK: {
+			unsigned char digest[SHA1_DIGEST_LENGTH];
+			CTASSERT(SHA1_DIGEST_LENGTH >= MD5_DIGEST_LENGTH);
 			axf = &swcr_auth_hash_key_sha1;
 		auth2common:
 			(*swd)->sw_ictx = malloc(axf->ctxsize,
@@ -971,9 +972,10 @@ swcr_newsession(void *arg, u_int32_t *sid, struct cryptoini *cri)
 			axf->Init((*swd)->sw_ictx);
 			axf->Update((*swd)->sw_ictx, cri->cri_key,
 			    cri->cri_klen / 8);
-			axf->Final(NULL, (*swd)->sw_ictx);
+			axf->Final(digest, (*swd)->sw_ictx);
 			(*swd)->sw_axf = axf;
 			break;
+		    }
 
 		case CRYPTO_MD5:
 			axf = &swcr_auth_hash_md5;
@@ -1248,7 +1250,7 @@ swcr_process(void *arg, struct cryptop *crp, int hint)
 		case CRYPTO_DEFLATE_COMP:
 		case CRYPTO_DEFLATE_COMP_NOGROW:
 		case CRYPTO_GZIP_COMP:
-			DPRINTF(("swcr_process: compdec for %d\n", sw->sw_alg));
+			DPRINTF("compdec for %d\n", sw->sw_alg);
 			if ((crp->crp_etype = swcr_compdec(crd, sw,
 			    crp->crp_buf, type, &crp->crp_olen)) != 0)
 				goto done;
@@ -1262,7 +1264,7 @@ swcr_process(void *arg, struct cryptop *crp, int hint)
 	}
 
 done:
-	DPRINTF(("request %p done\n", crp));
+	DPRINTF("request %p done\n", crp);
 	crypto_done(crp);
 	return 0;
 }
@@ -1323,8 +1325,10 @@ swcr_init(void)
 void
 swcryptoattach(int num)
 {
-
-	swcr_init();
+	/*
+	 * Nothing to do here, initialization is handled by the
+	 * module initialization code in swcrypto_attach() below).
+	 */
 }
 
 void	swcrypto_attach(device_t, device_t, void *);

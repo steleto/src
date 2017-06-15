@@ -1,4 +1,4 @@
-/*	$NetBSD: wsmux.c,v 1.61 2016/07/07 06:55:42 msaitoh Exp $	*/
+/*	$NetBSD: wsmux.c,v 1.63 2017/06/12 08:19:22 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1998, 2005 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsmux.c,v 1.61 2016/07/07 06:55:42 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsmux.c,v 1.63 2017/06/12 08:19:22 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -456,6 +456,8 @@ wsmux_do_ioctl(device_t dv, u_long cmd, void *data, int flag,
 #endif
 		case WSMUX_MUX:
 			return (wsmux_add_mux(d->idx, sc));
+		case WSMUX_BELL:
+			return (wsbell_add_mux(d->idx, sc));
 		default:
 			return (EINVAL);
 		}

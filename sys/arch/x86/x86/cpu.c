@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.121 2016/10/16 10:24:58 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.131 2017/06/10 05:31:34 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.121 2016/10/16 10:24:58 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.131 2017/06/10 05:31:34 pgoyette Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -177,7 +177,7 @@ static void	tss_init(struct i386tss *, void *, void *);
 
 static void	cpu_init_idle_lwp(struct cpu_info *);
 
-uint32_t cpu_feature[7]; /* X86 CPUID feature bits */
+uint32_t cpu_feature[7] __read_mostly; /* X86 CPUID feature bits */
 			/* [0] basic features cpuid.1:%edx
 			 * [1] basic features cpuid.1:%ecx (CPUID2_xxx bits)
 			 * [2] extended features cpuid:80000001:%edx
@@ -286,6 +286,9 @@ cpu_vm_init(struct cpu_info *ci)
 	uvm_page_recolor(ncolors);
 
 	pmap_tlb_cpu_init(ci);
+#ifndef __HAVE_DIRECT_MAP
+	pmap_vpage_cpu_init(ci);
+#endif
 }
 
 static void
@@ -343,8 +346,8 @@ cpu_attach(device_t parent, device_t self, void *aux)
 			aprint_verbose_dev(self, "running CPU at apic %d"
 			    " instead of at expected %d", lapic_cpu_number(),
 			    cpunum);
-			reg = i82489_readreg(LAPIC_ID);
-			i82489_writereg(LAPIC_ID, (reg & ~LAPIC_ID_MASK) |
+			reg = lapic_readreg(LAPIC_ID);
+			lapic_writereg(LAPIC_ID, (reg & ~LAPIC_ID_MASK) |
 			    (cpunum << LAPIC_ID_SHIFT));
 		}
 		if (cpunum != lapic_cpu_number()) {
@@ -832,7 +835,13 @@ cpu_hatch(void *v)
 			}
 			x86_mwait(0, 0);
 		} else {
-			for (i = 10000; i != 0; i--) {
+	/*
+	 * XXX The loop repetition count could be a lot higher, but
+	 * XXX currently qemu emulator takes a _very_long_time_ to
+	 * XXX execute the pause instruction.  So for now, use a low
+	 * XXX value to allow the cpu to hatch before timing out.
+	 */
+			for (i = 50; i != 0; i--) {
 				x86_pause();
 			}
 		}
@@ -876,11 +885,7 @@ cpu_hatch(void *v)
 	cpu_get_tsc_freq(ci);
 
 	s = splhigh();
-#ifdef i386
-	i82489_writereg(LAPIC_TPRI, 0);
-#else
-	lcr8(0);
-#endif
+	lapic_write_tpri(0);
 	x86_enable_intr();
 	splx(s);
 	x86_errata();
@@ -973,7 +978,7 @@ tss_init(struct i386tss *tss, void *stack, void *func)
 typedef void (vector)(void);
 extern vector IDTVEC(tss_trap08);
 #if defined(DDB) && defined(MULTIPROCESSOR)
-extern vector Xintrddbipi;
+extern vector Xintrddbipi, Xx2apic_intrddbipi;
 extern int ddb_vec;
 #endif
 
@@ -1002,7 +1007,8 @@ cpu_set_tss_gates(struct cpu_info *ci)
 	 */
 	ci->ci_ddbipi_stack = (char *)uvm_km_alloc(kernel_map, USPACE, 0,
 	    UVM_KMF_WIRED);
-	tss_init(&ci->ci_ddbipi_tss, ci->ci_ddbipi_stack, Xintrddbipi);
+	tss_init(&ci->ci_ddbipi_tss, ci->ci_ddbipi_stack,
+	    x2apic_mode ? Xx2apic_intrddbipi : Xintrddbipi);
 
 	setsegment(&sd, &ci->ci_ddbipi_tss, sizeof(struct i386tss) - 1,
 	    SDT_SYS386TSS, SEL_KPL, 0, 0);

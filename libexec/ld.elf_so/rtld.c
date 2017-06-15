@@ -1,4 +1,4 @@
-/*	$NetBSD: rtld.c,v 1.182 2016/12/01 18:21:39 christos Exp $	 */
+/*	$NetBSD: rtld.c,v 1.184 2017/06/08 18:24:39 joerg Exp $	 */
 
 /*
  * Copyright 1996 John D. Polstra.
@@ -40,7 +40,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: rtld.c,v 1.182 2016/12/01 18:21:39 christos Exp $");
+__RCSID("$NetBSD: rtld.c,v 1.184 2017/06/08 18:24:39 joerg Exp $");
 #endif /* not lint */
 
 #include <sys/param.h>
@@ -733,6 +733,8 @@ _rtld(Elf_Addr *sp, Elf_Addr relocbase)
 	if (real___mainprog_obj)
 		*real___mainprog_obj = _rtld_objmain;
 
+	_rtld_debug_state();	/* say hello to gdb! */
+
 	_rtld_exclusive_enter(&mask);
 
 	dbg(("calling _init functions"));
@@ -747,8 +749,6 @@ _rtld(Elf_Addr *sp, Elf_Addr relocbase)
 	 * Return with the entry point and the exit procedure in at the top
 	 * of stack.
 	 */
-
-	_rtld_debug_state();	/* say hello to gdb! */
 
 	((void **) osp)[0] = _rtld_exit;
 	((void **) osp)[1] = _rtld_objmain;
@@ -1071,7 +1071,7 @@ _rtld_objmain_sym(const char *name)
 }
 
 #ifdef __powerpc__
-static void *
+static __noinline void *
 hackish_return_address(void)
 {
 	return __builtin_return_address(1);

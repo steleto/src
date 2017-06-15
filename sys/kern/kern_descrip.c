@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_descrip.c,v 1.229 2015/08/03 04:55:15 christos Exp $	*/
+/*	$NetBSD: kern_descrip.c,v 1.231 2017/06/01 02:45:13 chs Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.229 2015/08/03 04:55:15 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.231 2017/06/01 02:45:13 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1255,9 +1255,7 @@ fgetdummy(void)
 	file_t *fp;
 
 	fp = kmem_zalloc(sizeof(*fp), KM_SLEEP);
-	if (fp != NULL) {
-		mutex_init(&fp->f_lock, MUTEX_DEFAULT, IPL_NONE);
-	}
+	mutex_init(&fp->f_lock, MUTEX_DEFAULT, IPL_NONE);
 	return fp;
 }
 
@@ -1864,7 +1862,7 @@ fd_clone(file_t *fp, unsigned fd, int flag, const struct fileops *fops,
 	fdfile_t *ff;
 	filedesc_t *fdp;
 
-	fp->f_flag |= flag & FMASK;
+	fp->f_flag = flag & FMASK;
 	fdp = curproc->p_fd;
 	ff = fdp->fd_dt->dt_ff[fd];
 	KASSERT(ff != NULL);
