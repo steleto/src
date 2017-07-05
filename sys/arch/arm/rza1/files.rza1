@@ -1,0 +1,20 @@
+#	$NetBSD$
+#
+# Configuration info for the Renesas RZ/A1
+#
+include "arch/arm/pic/files.pic"
+include "arch/arm/cortex/files.cortex"
+
+file	arch/arm/arm32/arm32_boot.c
+file	arch/arm/arm32/arm32_kvminit.c
+file	arch/arm/arm32/arm32_reboot.c
+file	arch/arm/arm32/irq_dispatch.S
+
+define	bus_dma_generic
+file	arch/arm/arm32/armv7_generic_space.c
+file	arch/arm/arm/bus_space_a4x.S
+
+# RZ/A1 AXI/AHB bus interface and SoC domains
+device	axi { [addr=-1], [size=0], [irq=-1], [irqbase=-1]} : bus_space_generic
+attach	axi at mainbus
+file	arch/arm/rza1/rza1_axi.c	axi

@@ -1,0 +1,12 @@
+#	$NetBSD$
+#
+# GR-PEACH
+#
+
+file arch/evbarm/grpeach/grpeach_machdep.c
+
+# Kernel boot arguments
+defparam opt_machdep.h				BOOT_ARGS
+
+# CPU support and integrated peripherals
+include "arch/arm/rza1/files.rza1"

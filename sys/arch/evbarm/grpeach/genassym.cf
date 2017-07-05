@@ -1,0 +1,5 @@
+#	$NetBSD$	*/
+
+include <evbarm/grpeach/platform.h>
+
+include <arm/rza1/rza1_reg.h>
