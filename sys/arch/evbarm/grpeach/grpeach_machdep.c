@@ -34,6 +34,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 BootConfig bootconfig;
 char *boot_args = NULL;
 
+u_int uboot_args[4] = { 0 };
+
 void consinit(void);
 
 /*

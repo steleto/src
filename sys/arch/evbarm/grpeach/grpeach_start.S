@@ -1,5 +1,9 @@
 /*	$NetBSD$	*/
 
+#include "opt_cpuoptions.h"
+#include "opt_cputypes.h"
+#include "opt_arm_debug.h"
+
 #include <arm/asm.h>
 #include <arm/armreg.h>
 #include <arm/cortex/scu_reg.h>
@@ -17,6 +21,10 @@ RCSID("$NetBSD$")
 #define	SCFSR_TDFE	0x0020
 #define	SCFSR_TEND	0x0040
 #define SCFDR_TFULL	0x1000
+
+#define BOOT_MEMSIZE	10	/* temporary for boot up kernel */
+#define TEMP_L1_TABLE	(KERNEL_BASE - KERNEL_BASE_VOFFSET +		\
+			 BOOT_MEMSIZE * 0x100000 - L1_TABLE_SIZE)
 
 #ifdef VERBOSE_INIT_ARM
 # define XPUTC(n)	mov r0, n; bl xputc
@@ -39,10 +47,109 @@ RCSID("$NetBSD$")
 
 	.global	_C_LABEL(grpeach_start)
 _C_LABEL(grpeach_start):
-	PRINT("hey, favstar! ban stop me premiamu! -- @toshi_a")
+	/*
+	 * Save any arguments u-boot passed us.
+	 */
+	movw	r4, #:lower16:uboot_args
+	movt	r4, #:upper16:uboot_args
+#if KERNEL_BASE_VOFFSET != 0
+	sub	r4, r4, #KERNEL_BASE_VOFFSET
+#endif
+	stmia	r4, {r0-r3}
 
-loop:
-	b loop
+
+#ifdef VERBOSE_INIT_ARM
+	PRINT("  PC=")
+	mov	r0, pc
+	PRINT_R0
+
+	PRINT("  SP=")
+	mov	r0, sp
+	PRINT_R0
+
+	PRINT("CPSR=")
+	mrs	r0, cpsr
+	PRINT_R0
+#endif /* VERBOSE_INIT_ARM */
+
+	/* set temporary stack */
+	movw	sp, #:lower16:tmpstack
+	movt	sp, #:upper16:tmpstack
+
+	PRINT("<cortex_init>")
+	bl	cortex_init
+	PRINT("</cortex_init>\r\n")
+
+	/*
+	 * Set up a preliminary mapping in the MMU to allow us to run
+	 * at KERNEL_BASE with caches on.
+	 */
+	PRINT("<mmu_init_table>")
+	movw	r1, #:lower16:mmu_init_table
+	movt	r1, #:upper16:mmu_init_table
+	movw	r0, #:lower16:TEMP_L1_TABLE
+	movt	r0, #:upper16:TEMP_L1_TABLE
+	bl	arm_boot_l1pt_init
+	PRINT("</mmu_init_table>\r\n")
+
+	/*
+	 * init the CPU TLB, Cache, MMU.
+	 */
+	PRINT("<arm_cpuinit>")
+#ifdef VERBOSE_INIT_ARM
+	adr	r11, xputc
+#endif
+	movw	r0, #:lower16:TEMP_L1_TABLE
+	movt	r0, #:upper16:TEMP_L1_TABLE
+	bl	arm_cpuinit
+	PRINT("</arm_cpuinit>\r\n")
+
+	PRINT("jump to start()\r\n")
+	movw	lr, #:lower16:start
+	movt	lr, #:upper16:start
+	bx	lr
+	/* NOTREACHED */
+
+#include <arm/cortex/a9_mpsubr.S>
+
+mmu_init_table:
+	MMU_INIT(0x20000000, 0x20000000,
+	    (0x00a00000 + L1_S_SIZE - 1) / L1_S_SIZE,
+	    L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_CACHEABLE)
+	MMU_INIT(0x80000000, 0x20000000,
+	    (0x00a00000 + L1_S_SIZE - 1) / L1_S_SIZE,
+	    L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_CACHEABLE)
+	MMU_INIT(0x3fe00000, 0x3fe00000,
+	    ((0x40000000 - 0x3fe00000) + L1_S_SIZE - 1) / L1_S_SIZE,
+	    L1_S_PROTO_armv7 | L1_S_APv7_KRW)
+	MMU_INIT(0xe8000000, 0xe8000000,
+	    ((0x100000000 - 0xe8000000) + L1_S_SIZE - 1) / L1_S_SIZE,
+	    L1_S_PROTO_armv7 | L1_S_APv7_KRW)
+
+	/* map VA==PA for IO+MEM (0x00000000-0x4fffffff) */
+//	MMU_INIT(0x00000000, 0x00000000,
+//	    0x100000000 / L1_S_SIZE,
+//	    L1_S_PROTO_armv7 | L1_S_APv7_KRW)
+
+//#if KERNEL_BASE_VOFFSET != 0
+//	MMU_INIT(KERNEL_BASE, KERNEL_BASE - KERNEL_BASE_VOFFSET,
+//	    (0xa0000000 + L1_S_SIZE - 1) / L1_S_SIZE,
+//	    L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_CACHEABLE)
+//#endif
+//	MMU_INIT(KERNEL_BASE, KERNEL_BASE - KERNEL_BASE_VOFFSET,
+//	    (0xa0000000 + L1_S_SIZE - 1) / L1_S_SIZE,
+//	    L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_CACHEABLE)
+
+//	MMU_INIT(KERNEL_IO1_BASE, KERNEL_IO1_BASE,
+//	    (KERNEL_IO1_SIZE + L1_S_SIZE - 1) / L1_S_SIZE,
+//	    L1_S_PROTO_armv7 | L1_S_APv7_KRW)
+//
+//	MMU_INIT(KERNEL_IO2_BASE, KERNEL_IO2_BASE,
+//	    (KERNEL_IO2_SIZE + L1_S_SIZE - 1) / L1_S_SIZE,
+//	    L1_S_PROTO_armv7 | L1_S_APv7_KRW)
+
+	/* end of table */
+	MMU_INIT(0, 0, 0, 0)
 
 #if defined(VERBOSE_INIT_ARM)
 #define TIMO		0x25000
@@ -138,5 +245,12 @@ debugputc:
 	bl	xputc
 	ldmfd	sp!, {r0, r1, r2, r3, pc}
 #endif /* VERBOSE_INIT_ARM */
+
+/*
+ * temporary local stack
+ */
+	.align 8
+	.space	1024
+tmpstack:
 
 END(_C_LABEL(grpeach_start))

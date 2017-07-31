@@ -2,4 +2,9 @@
 
 include <evbarm/grpeach/platform.h>
 
+define KERNEL_IO1_BASE	KERNEL_IO1_BASE
+define KERNEL_IO1_SIZE	KERNEL_IO1_SIZE
+define KERNEL_IO2_BASE	KERNEL_IO2_BASE
+define KERNEL_IO2_SIZE	KERNEL_IO2_SIZE
+
 include <arm/rza1/rza1_reg.h>
