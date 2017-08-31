@@ -4,6 +4,7 @@
 #
 
 file arch/evbarm/grpeach/grpeach_machdep.c
+file arch/evbarm/grpeach/grpeach_iomux.c
 
 # Kernel boot arguments
 defparam opt_machdep.h				BOOT_ARGS

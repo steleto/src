@@ -109,6 +109,10 @@ options 	SYSVSHM		# System V-like memory sharing
 
 # Device options
 
+# Console options.    also need RZA1ARTCONSOLE
+options 	CONSDEVNAME="\"rza1uart\"",CONADDR=0xe8008000,CONSPEED=115200
+options 	CONS_OVERRIDE
+
 #options 	MEMORY_DISK_HOOKS	# boottime setup of ramdisk
 #options 	MEMORY_DISK_ROOT_SIZE=8192	# Size in blocks
 #options 	MEMORY_DISK_DYNAMIC
@@ -171,6 +175,17 @@ a9tmr0		at armperiph?		# A9 Global Timer
 a9wdt0		at armperiph? flags 0	# A9 Watchdog Timer
 
 axi0		at mainbus?
+
+# Serial
+#rza1uart0	at axi? addr 0x0e8007000 irq 224	# UART0
+#rza1uart0	at axi? addr 0x0e8007800 irq 228	# UART1
+rza1uart0	at axi? addr 0x0e8008000 irq 232	# UART2
+#rza1uart0	at axi? addr 0x0e8008800 irq 236	# UART3
+#rza1uart0	at axi? addr 0x0e8009000 irq 240	# UART4
+#rza1uart0	at axi? addr 0x0e8009800 irq 244	# UART5
+#rza1uart0	at axi? addr 0x0e800a000 irq 248	# UART6
+#rza1uart0	at axi? addr 0x0e800a800 irq 252	# UART7
+options		RZA1UARTCONSOLE
 
 # Pseudo-Devices
 

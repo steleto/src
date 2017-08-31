@@ -18,3 +18,9 @@ file	arch/arm/arm/bus_space_a4x.S
 device	axi { [addr=-1], [size=0], [irq=-1], [irqbase=-1]} : bus_space_generic
 attach	axi at mainbus
 file	arch/arm/rza1/rza1_axi.c	axi
+
+# RZ/A1 UART
+device	rza1uart
+attach	rza1uart at axi
+file	arch/arm/rza1/rza1_uart.c		rza1uart	needs-flag
+defflag opt_rza1uart.h				RZA1UARTCONSOLE
