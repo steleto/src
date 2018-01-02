@@ -1,0 +1,8 @@
+#
+#	$NetBSD$
+#
+#	GRPEACH_INSTALL -- GR reference board for RZ family RZ/A1H group products
+#
+
+include "arch/evbarm/conf/GRPEACH"
+include "arch/evbarm/conf/INSTALL"
