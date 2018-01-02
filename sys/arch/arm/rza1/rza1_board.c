@@ -109,15 +109,13 @@ rza1_device_register(device_t self, void *aux)
 		return;
 	}
 #endif
-#if 0
 	/*
 	 * We need to tell the A9 Global/Watchdog Timer
 	 * what frequency it runs at.
 	 */
 	if (device_is_a(self, "a9tmr") || device_is_a(self, "a9wdt")) {
 		prop_dictionary_set_uint32(dict, "frequency",
-		   imx6_armrootclk() / IMX6_PERIPHCLK_N);
+					   400000000 / 2);
 		return;
 	}
-#endif
 }
