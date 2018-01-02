@@ -17,11 +17,10 @@ struct axi_attach_args {
 
 extern struct bus_space armv7_generic_bs_tag;
 
-int rza1uart_cons_attach(bus_space_tag_t, paddr_t, u_int, tcflag_t);
-
 /*
- * Set platform dependent values
+ * rza1_board.c
  */
-void rza1uart_set_frequency(u_int, u_int);
+void rza1_bootstrap(void);
+void rza1_device_register(device_t, void *);
 
 #endif	/* !ARM_RZA1_RZA1_VAR_H */

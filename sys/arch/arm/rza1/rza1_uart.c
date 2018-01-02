@@ -26,6 +26,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <arm/rza1/rza1_reg.h>
 #include <arm/rza1/rza1_var.h>
+#include <arm/rza1/rza1uart_var.h>
 #include <dev/cons.h>
 
 #include "opt_rza1uart.h"

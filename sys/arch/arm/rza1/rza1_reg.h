@@ -40,6 +40,12 @@
 #define RZA1_IO4_SIZE		0x00100000
 
 /*
+ * Level 2 Cache Controller
+ */
+#define RZA1_L2CC_BASE		0x3ffff000
+#define RZA1_L2CC_SIZE		0x00001000
+
+/*
  * Serial Communication Interface with FIFO (SCIF)
  */
 #define RZA1_SCIF_BASE(n)	(0xe8007000 + 0x800 * (n))

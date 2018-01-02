@@ -14,6 +14,8 @@ define	bus_dma_generic
 file	arch/arm/arm32/armv7_generic_space.c
 file	arch/arm/arm/bus_space_a4x.S
 
+file	arch/arm/rza1/rza1_board.c
+
 # RZ/A1 AXI/AHB bus interface and SoC domains
 device	axi { [addr=-1], [size=0], [irq=-1], [irqbase=-1]} : bus_space_generic
 attach	axi at mainbus
