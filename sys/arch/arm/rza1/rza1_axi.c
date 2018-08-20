@@ -29,13 +29,14 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
-#include "locators.h"
-/* #include "bus_dma_generic.h" */
-
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <uvm/uvm_extern.h>
+
+#include <arm/rza1/rza1_var.h>
+
+#include "locators.h"
 
 struct axi_softc {
 	device_t sc_dev;
@@ -45,6 +46,10 @@ struct axi_softc {
 
 static int axi_match(device_t, struct cfdata *, void *);
 static void axi_attach(device_t, device_t, void *);
+static int axi_search(device_t, struct cfdata *, const int *, void *);
+static int axi_critical_search(device_t, struct cfdata *, const int *, void *);
+static int axi_search(device_t, struct cfdata *, const int *, void *);
+static int axi_print(void *, const char *);
 
 CFATTACH_DECL_NEW(axi, sizeof(struct axi_softc),
     axi_match, axi_attach, NULL, NULL);
@@ -54,11 +59,94 @@ static int
 axi_match(device_t parent __unused, struct cfdata *match __unused,
           void *aux __unused)
 {
-	return 0;
+	return 1;
 }
 
 /* ARGSUSED */
 static void
 axi_attach(device_t parent __unused, device_t self, void *aux __unused)
 {
+	struct axi_softc *sc;
+	struct axi_attach_args aa;
+
+	aprint_normal(": Advancd eXtensible Interface\n");
+	aprint_naive("\n");
+
+	sc = device_private(self);
+	sc->sc_iot = &armv7_generic_bs_tag;
+#if NBUS_DMA_GENERIC > 0
+	sc->sc_dmat = &imx_bus_dma_tag;
+#else
+	sc->sc_dmat = 0;
+#endif
+
+	aa.aa_name = "axi";
+	aa.aa_iot = sc->sc_iot;
+	aa.aa_dmat = sc->sc_dmat;
+	config_search_ia(axi_critical_search, self, "axi", &aa);
+	config_search_ia(axi_search, self, "axi", &aa);
+}
+
+/* ARGSUSED */
+static int
+axi_critical_search(device_t parent, struct cfdata *cf,
+    const int *ldesc __unused, void *aux)
+{
+	struct axi_attach_args *aa;
+
+	aa = aux;
+
+	if ((strcmp(cf->cf_name, "rza1uart") != 0))
+		return 0;
+
+	aa->aa_name = cf->cf_name;
+	aa->aa_addr = cf->cf_loc[AXICF_ADDR];
+	aa->aa_size = cf->cf_loc[AXICF_SIZE];
+	aa->aa_irq = cf->cf_loc[AXICF_IRQ];
+	aa->aa_irqbase = cf->cf_loc[AXICF_IRQBASE];
+
+	if (config_match(parent, cf, aux) > 0)
+		config_attach(parent, cf, aux, axi_print);
+
+	return 0;
+}
+
+/* ARGSUSED */
+static int
+axi_search(device_t parent, struct cfdata *cf, const int *ldesc __unused,
+    void *aux)
+{
+	struct axi_attach_args *aa;
+
+	aa = aux;
+
+	aa->aa_addr = cf->cf_loc[AXICF_ADDR];
+	aa->aa_size = cf->cf_loc[AXICF_SIZE];
+	aa->aa_irq = cf->cf_loc[AXICF_IRQ];
+	aa->aa_irqbase = cf->cf_loc[AXICF_IRQBASE];
+
+	if (config_match(parent, cf, aux) > 0)
+		config_attach(parent, cf, aux, axi_print);
+
+	return 0;
+}
+
+/* ARGSUSED */
+static int
+axi_print(void *aux, const char *name __unused)
+{
+	struct axi_attach_args *aa = (struct axi_attach_args *)aux;
+
+	if (aa->aa_addr != AXICF_ADDR_DEFAULT) {
+		aprint_normal(" addr 0x%lx", aa->aa_addr);
+		if (aa->aa_size > AXICF_SIZE_DEFAULT)
+			aprint_normal("-0x%lx",
+			    aa->aa_addr + aa->aa_size-1);
+	}
+	if (aa->aa_irq != AXICF_IRQ_DEFAULT)
+		aprint_normal(" intr %d", aa->aa_irq);
+	if (aa->aa_irqbase != AXICF_IRQBASE_DEFAULT)
+		aprint_normal(" irqbase %d", aa->aa_irqbase);
+
+	return (UNCONF);
 }

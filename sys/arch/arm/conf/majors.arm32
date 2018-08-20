@@ -107,6 +107,7 @@ device-major	twe		char 109  		twe
 device-major	nsmb		char 110		nsmb
 device-major	vchiq		char 111		vchiq
 device-major	zynquart	char 112		zynquart
+device-major	rza1uart	char 113		rza1uart
 
 # Majors up to 143 are reserved for machine-dependent drivers.
 # New machine-independent driver majors are assigned in 

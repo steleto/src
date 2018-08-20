@@ -109,9 +109,9 @@ options 	SYSVSHM		# System V-like memory sharing
 
 # Device options
 
-# Console options.    also need RZA1ARTCONSOLE
+# Console options.    also need RZA1UARTCONSOLE
 options 	CONSDEVNAME="\"rza1uart\"",CONADDR=0xe8008000,CONSPEED=115200
-options 	CONS_OVERRIDE
+#options 	CONS_OVERRIDE
 
 #options 	MEMORY_DISK_HOOKS	# boottime setup of ramdisk
 #options 	MEMORY_DISK_ROOT_SIZE=8192	# Size in blocks
